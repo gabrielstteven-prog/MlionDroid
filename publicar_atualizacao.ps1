@@ -27,6 +27,15 @@ param(
 
 $ErrorActionPreference = "Continue"
 
+# Forca o PowerShell a ler a saida de comandos externos (git, gh) como
+# UTF-8. Sem isso, acentos ficam corrompidos (ex: "descricao" vira
+# "descri..cao") porque o console do Windows usa por padrao uma pagina de
+# codigo antiga, diferente do UTF-8 que o Git realmente usa internamente.
+try { chcp.com 65001 > $null } catch {}
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 function Escrever($texto, $cor) {
     Write-Host $texto -ForegroundColor $cor
 }
