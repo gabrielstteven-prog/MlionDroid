@@ -117,25 +117,80 @@ if (-not (Test-Path $apkPath)) {
 }
 Escrever "[OK] APK gerado com sucesso." "Green"
 
-# --- 6. Pede o changelog ---------------------------------------------------------
-Escrever "`n[INFO] Digite as novidades desta versao (uma linha por novidade)." "Yellow"
-Escrever "       Pressione Enter numa linha vazia para terminar:" "Yellow"
-$linhas = @()
-while ($true) {
-    $linha = Read-Host
-    if ([string]::IsNullOrWhiteSpace($linha)) { break }
-    $linhas += "- $linha"
+# --- 6. Gera o changelog automaticamente a partir dos commits do Git -----------
+$changelog = ""
+$temGit = Test-Path ".git"
+
+# --- 6. Gera o changelog automaticamente a partir dos commits do Git -----------
+$changelog = ""
+$temGit = Test-Path ".git"
+
+if ($temGit) {
+    $ultimaTagLocal = (git describe --tags --abbrev=0 2>$null)
+    if ($ultimaTagLocal) { $ultimaTagLocal = $ultimaTagLocal.Trim() }
+
+    if ($LASTEXITCODE -eq 0 -and $ultimaTagLocal) {
+        Escrever "[INFO] Ultima tag local encontrada: $ultimaTagLocal" "DarkGray"
+        $commits = git log "$ultimaTagLocal..HEAD" --pretty=format:"- %s" 2>&1
+    } else {
+        # Nenhuma tag local ainda -- pega todo o historico existente
+        Escrever "[INFO] Nenhuma tag local encontrada -- usando todo o historico." "DarkGray"
+        $commits = git log --pretty=format:"- %s" 2>&1
+    }
+    $codigoSaidaGitLog = $LASTEXITCODE
+
+    # $commits pode vir como uma unica string OU como array de linhas,
+    # dependendo de quanto texto o Git devolveu -- -join trata os dois
+    # casos igual, sem risco de quebrar o texto sem querer.
+    $textoCapturado = ($commits -join "`n").Trim()
+
+    if ($codigoSaidaGitLog -ne 0) {
+        # O comando falhou de verdade -- mostra o motivo em vez de
+        # publicar uma mensagem de erro como se fosse changelog.
+        Escrever "`n[AVISO] git log falhou ao gerar o changelog automatico:" "Yellow"
+        Escrever "         $textoCapturado" "Yellow"
+    } elseif ($textoCapturado) {
+        $changelog = $textoCapturado
+        Escrever "`n[INFO] Changelog gerado automaticamente a partir do Git:" "Cyan"
+        Escrever $changelog "DarkGray"
+    } else {
+        Escrever "`n[AVISO] Nenhum commit novo encontrado no Git desde a ultima tag." "Yellow"
+        Escrever "         (tag usada na comparacao: '$ultimaTagLocal')" "Yellow"
+    }
+} else {
+    Escrever "`n[AVISO] Esta pasta ainda nao e um repositorio Git." "Yellow"
+    Escrever "         Rode 'git init' para habilitar changelog automatico nas proximas vezes." "Yellow"
 }
-$changelog = $linhas -join "`n"
+
+# Sem Git configurado (ou sem commits novos): pede na mao, como antes.
 if ([string]::IsNullOrWhiteSpace($changelog)) {
-    $changelog = "Nova versao $versao."
+    Escrever "`n[INFO] Digite as novidades desta versao (uma linha por novidade)." "Yellow"
+    Escrever "       Pressione Enter numa linha vazia para terminar:" "Yellow"
+    $linhas = @()
+    while ($true) {
+        $linha = Read-Host
+        if ([string]::IsNullOrWhiteSpace($linha)) { break }
+        $linhas += "- $linha"
+    }
+    $changelog = $linhas -join "`n"
+    if ([string]::IsNullOrWhiteSpace($changelog)) {
+        $changelog = "Nova versao $versao."
+    }
 }
 
 # --- 7. Publica a release no GitHub, ja com o APK anexado ----------------------
 Escrever "`n[INFO] Publicando $tag no GitHub..." "Cyan"
 gh release create $tag $apkPath --repo $repo --title "Versao $versao" --notes "$changelog"
+$publicacaoOk = ($LASTEXITCODE -eq 0)
 
-if ($LASTEXITCODE -eq 0) {
+# Marca essa versao no historico local do Git, para a proxima publicacao
+# saber exatamente de onde comecar a contar os commits novos. Isso roda
+# DEPOIS de guardar $publicacaoOk, pra nao atrapalhar a checagem abaixo.
+if ($temGit -and $publicacaoOk) {
+    git tag $tag 2>$null | Out-Null
+}
+
+if ($publicacaoOk) {
     Escrever "`n[OK] Publicado com sucesso!" "Green"
     Escrever "     O banner de atualizacao vai aparecer sozinho pros seus amigos na proxima vez que abrirem o app." "Green"
 
