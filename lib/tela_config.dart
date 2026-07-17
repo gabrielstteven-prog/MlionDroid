@@ -87,7 +87,7 @@ const Map<String, TimeInfo> timesDisponiveis = {
       corBottom: '0xFF000000',
       corDestaque: '0xFFFFD700',
       emoji: '🔴',
-      teamId: 5981,
+      teamId: 1783,
       escudoAsset: 'assets/escudos/flamengo.png'),
   'corinthians': TimeInfo(
       nome: 'Corinthians',
@@ -96,7 +96,7 @@ const Map<String, TimeInfo> timesDisponiveis = {
       corBottom: '0xFF000000',
       corDestaque: '0xFFFFFFFF',
       emoji: '⚫',
-      teamId: 1783,
+      teamId: 1779,
       escudoAsset: 'assets/escudos/corinthians.png'),
   'sao-paulo': TimeInfo(
       nome: 'São Paulo',
@@ -105,7 +105,7 @@ const Map<String, TimeInfo> timesDisponiveis = {
       corBottom: '0xFF000000',
       corDestaque: '0xFFFFFFFF',
       emoji: '⚪',
-      teamId: 1771,
+      teamId: 1776,
       escudoAsset: 'assets/escudos/sao-paulo.png'),
   'santos': TimeInfo(
       nome: 'Santos',
@@ -114,7 +114,7 @@ const Map<String, TimeInfo> timesDisponiveis = {
       corBottom: '0xFF000000',
       corDestaque: '0xFFF5F5F5',
       emoji: '⚪',
-      teamId: 1772,
+      teamId: 6685,
       escudoAsset: 'assets/escudos/santos.png'),
   'atletico-mg': TimeInfo(
       nome: 'Atlético-MG',
@@ -123,7 +123,7 @@ const Map<String, TimeInfo> timesDisponiveis = {
       corBottom: '0xFF000000',
       corDestaque: '0xFFFFD700',
       emoji: '⚫',
-      teamId: 1062,
+      teamId: 1766,
       escudoAsset: 'assets/escudos/atletico-mg.png'),
   'cruzeiro': TimeInfo(
       nome: 'Cruzeiro',
@@ -132,7 +132,7 @@ const Map<String, TimeInfo> timesDisponiveis = {
       corBottom: '0xFF000000',
       corDestaque: '0xFFFFD700',
       emoji: '🔵',
-      teamId: 1775,
+      teamId: 1771,
       escudoAsset: 'assets/escudos/cruzeiro.png'),
   'internacional': TimeInfo(
       nome: 'Internacional',
@@ -141,7 +141,7 @@ const Map<String, TimeInfo> timesDisponiveis = {
       corBottom: '0xFF000000',
       corDestaque: '0xFFFFFFFF',
       emoji: '🔴',
-      teamId: 1776,
+      teamId: 6684,
       escudoAsset: 'assets/escudos/internacional.png'),
   'gremio': TimeInfo(
       nome: 'Grêmio',
@@ -150,7 +150,7 @@ const Map<String, TimeInfo> timesDisponiveis = {
       corBottom: '0xFF000000',
       corDestaque: '0xFF87CEEB',
       emoji: '🔵',
-      teamId: 1774,
+      teamId: 1767,
       escudoAsset: 'assets/escudos/gremio.png'),
   'vasco': TimeInfo(
       nome: 'Vasco',
@@ -159,7 +159,7 @@ const Map<String, TimeInfo> timesDisponiveis = {
       corBottom: '0xFF000000',
       corDestaque: '0xFFFFFFFF',
       emoji: '⚫',
-      teamId: 1782,
+      teamId: 1780,
       escudoAsset: 'assets/escudos/vasco.png'),
   'botafogo': TimeInfo(
       nome: 'Botafogo',
@@ -168,7 +168,7 @@ const Map<String, TimeInfo> timesDisponiveis = {
       corBottom: '0xFF000000',
       corDestaque: '0xFFFFFFFF',
       emoji: '⚫',
-      teamId: 1810,
+      teamId: 1770,
       escudoAsset: 'assets/escudos/botafogo.png'),
   'fluminense': TimeInfo(
       nome: 'Fluminense',
@@ -177,7 +177,7 @@ const Map<String, TimeInfo> timesDisponiveis = {
       corBottom: '0xFF000000',
       corDestaque: '0xFF8FBC8F',
       emoji: '🔴',
-      teamId: 1784,
+      teamId: 1765,
       escudoAsset: 'assets/escudos/fluminense.png'),
   'atletico-pr': TimeInfo(
       nome: 'Athletico-PR',
@@ -186,7 +186,7 @@ const Map<String, TimeInfo> timesDisponiveis = {
       corBottom: '0xFF000000',
       corDestaque: '0xFF1a1a1a',
       emoji: '🔴',
-      teamId: 1778,
+      teamId: 1768,
       escudoAsset: 'assets/escudos/atletico-pr.png'),
   'bahia': TimeInfo(
       nome: 'Bahia',
@@ -195,7 +195,7 @@ const Map<String, TimeInfo> timesDisponiveis = {
       corBottom: '0xFF000000',
       corDestaque: '0xFFFFD700',
       emoji: '🔵',
-      teamId: 1786,
+      teamId: 1777,
       escudoAsset: 'assets/escudos/bahia.png'),
   'fortaleza': TimeInfo(
       nome: 'Fortaleza',
@@ -222,7 +222,7 @@ const Map<String, TimeInfo> timesDisponiveis = {
       corBottom: '0xFF000000',
       corDestaque: '0xFFFFFFFF',
       emoji: '🔴',
-      teamId: 4692,
+      teamId: 4286,
       escudoAsset: 'assets/escudos/bragantino.png'),
 };
 

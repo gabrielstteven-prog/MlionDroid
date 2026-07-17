@@ -38,23 +38,24 @@ class _TelaPalmeirasState extends State<TelaPalmeiras> {
   static const String _apiKey = '2fe5b44d83914bd5b4b44df54b718fd0';
 
   static const Map<String, int> _teamIds = {
-    'palmeiras': 1769,
-    'flamengo': 1783,
-    'corinthians': 1779,
-    'sao-paulo': 1776,
-    'santos': 6685,
-    'gremio': 1767,
-    'internacional': 6684,
-    'atletico-mg': 1776,
-    'fluminense': 1765,
-    'vasco': 1780,
     'botafogo': 1770,
+    'atletico-mg': 1766, // Corrigido para bater com o terminal (era 1776)
+    'atletico-pr': 1768, // Corrigido para bater com o terminal (era 1769)
+    'coritiba': 4241,
+    'flamengo': 1783,
+    'vasco': 1780,
     'cruzeiro': 1771,
-    'atletico-pr': 1768,
-    'bragantino': 4686,
-    'fortaleza': 7315,
     'bahia': 1777,
-    'ceara': 4690,
+    'vitoria': 1782,
+    'fluminense': 1765,
+    'gremio': 1767,
+    'bragantino': 4286, // Corrigido para bater com o terminal (era 4686)
+    'santos': 6685,
+    'sao-paulo': 1776,
+    'corinthians': 1779,
+    'internacional': 6684,
+    'palmeiras':
+        1769, // ID Real do Palmeiras na sua API         // ID Real do Ceará
   };
 
   static const Map<String, Map<String, String>> _competicoes = {
