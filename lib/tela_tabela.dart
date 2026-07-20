@@ -105,6 +105,7 @@ class _TelaTabelaState extends State<TelaTabela>
 
   Map<String, dynamic>? _jogo;
   bool _carregando = true;
+  bool _limiteApiAtingido = false;
   Timer? _saidaTimer;
 
   late AnimationController _bgCtrl;
@@ -245,27 +246,39 @@ class _TelaTabelaState extends State<TelaTabela>
     // O plano free da football-data.org permite acesso a competições selecionadas
     final id = _teamId;
     Map<String, dynamic>? jogoEncontrado;
+    bool limiteAtingido = false;
 
     // Lista de competições para tentar (ordem de prioridade)
     const comps = ['BSA', 'CLI', 'BRC', 'CSA', 'WC'];
 
     // Tentativa 1: endpoint direto sem filtro de competição
-    jogoEncontrado = await _fetchEndpoint(
+    var r1 = await _fetchEndpointComStatus(
       'https://api.football-data.org/v4/teams/$id/matches?status=SCHEDULED&limit=1',
     );
+    jogoEncontrado = r1.jogo;
+    if (r1.limitado) limiteAtingido = true;
 
     // Tentativa 2: endpoint com cada competição separada
-    if (jogoEncontrado == null) {
+    // Para assim que detectar limite de requisições — continuar batendo na
+    // API já bloqueada só resultaria em mais falhas, sem chance de sucesso.
+    if (jogoEncontrado == null && !limiteAtingido) {
       for (final comp in comps) {
-        jogoEncontrado = await _fetchEndpoint(
+        final r = await _fetchEndpointComStatus(
           'https://api.football-data.org/v4/teams/$id/matches?competitions=$comp&status=SCHEDULED&limit=1',
         );
-        if (jogoEncontrado != null) break;
+        if (r.limitado) {
+          limiteAtingido = true;
+          break;
+        }
+        if (r.jogo != null) {
+          jogoEncontrado = r.jogo;
+          break;
+        }
       }
     }
 
     // Tentativa 3: buscar via competição (todos os jogos, filtrar pelo time)
-    if (jogoEncontrado == null) {
+    if (jogoEncontrado == null && !limiteAtingido) {
       for (final comp in ['BSA', 'CLI']) {
         jogoEncontrado = await _fetchCompetition(comp, id);
         if (jogoEncontrado != null) break;
@@ -277,18 +290,49 @@ class _TelaTabelaState extends State<TelaTabela>
       setState(() {
         _jogo = _construirJogo(p);
         _carregando = false;
+        _limiteApiAtingido = false;
       });
       await CacheManager.instance.salvar(_chaveCache, p);
     } else {
       setState(() {
         _jogo = null;
         _carregando = false;
+        // Guardamos essa informação para a tela mostrar uma mensagem
+        // diferente de "sem jogo agendado" quando o motivo real foi a
+        // API ter bloqueado por excesso de requisições.
+        _limiteApiAtingido = limiteAtingido;
       });
     }
 
     _saidaTimer = Timer(const Duration(seconds: 18), () {
       if (mounted) widget.aoTerminar();
     });
+  }
+
+  // Busca um endpoint direto e retorna o jogo + se bateu no limite de
+  // requisições (HTTP 429), para diferenciar de "sem jogo mesmo".
+  Future<({Map<String, dynamic>? jogo, bool limitado})> _fetchEndpointComStatus(
+      String url) async {
+    try {
+      final res = await http.get(
+        Uri.parse(url),
+        headers: {'X-Auth-Token': _kApiKey},
+      ).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 429) {
+        debugPrint('football-data.org: limite de requisicoes atingido (429)');
+        return (jogo: null, limitado: true);
+      }
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final matches = data['matches'] as List? ?? [];
+        if (matches.isNotEmpty) {
+          return (jogo: matches[0] as Map<String, dynamic>, limitado: false);
+        }
+      }
+    } catch (_) {}
+    return (jogo: null, limitado: false);
   }
 
   // Busca um endpoint direto e retorna o primeiro match ou null
@@ -389,10 +433,18 @@ class _TelaTabelaState extends State<TelaTabela>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.sports_soccer,
-              color: _corAcento.withValues(alpha: 0.4), size: r.icon(60)),
+          Icon(
+              _limiteApiAtingido
+                  ? Icons.hourglass_empty_rounded
+                  : Icons.sports_soccer,
+              color: _corAcento.withValues(alpha: 0.4),
+              size: r.icon(60)),
           SizedBox(height: r.sp(16)),
-          Text('Nenhum jogo agendado',
+          Text(
+              _limiteApiAtingido
+                  ? 'Muitas consultas recentes — tentando de novo em breve'
+                  : 'Nenhum jogo agendado',
+              textAlign: TextAlign.center,
               style: GoogleFonts.rajdhani(
                   color: Colors.white54,
                   fontSize: r.fs(20),
