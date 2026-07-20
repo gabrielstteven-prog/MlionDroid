@@ -37,27 +37,6 @@ class _TelaPalmeirasState extends State<TelaPalmeiras> {
   // ── Dados de competições ─────────────────────────────────────────────────
   static const String _apiKey = '2fe5b44d83914bd5b4b44df54b718fd0';
 
-  static const Map<String, int> _teamIds = {
-    'botafogo': 1770,
-    'atletico-mg': 1766, // Corrigido para bater com o terminal (era 1776)
-    'atletico-pr': 1768, // Corrigido para bater com o terminal (era 1769)
-    'coritiba': 4241,
-    'flamengo': 1783,
-    'vasco': 1780,
-    'cruzeiro': 1771,
-    'bahia': 1777,
-    'vitoria': 1782,
-    'fluminense': 1765,
-    'gremio': 1767,
-    'bragantino': 4286, // Corrigido para bater com o terminal (era 4686)
-    'santos': 6685,
-    'sao-paulo': 1776,
-    'corinthians': 1779,
-    'internacional': 6684,
-    'palmeiras':
-        1769, // ID Real do Palmeiras na sua API         // ID Real do Ceará
-  };
-
   static const Map<String, Map<String, String>> _competicoes = {
     'BSA': {'nome': 'Brasileirão', 'logo': 'assets/brasileirao.png'},
     'CLI': {'nome': 'Libertadores', 'logo': 'assets/libertadores.png'},
@@ -113,27 +92,21 @@ class _TelaPalmeirasState extends State<TelaPalmeiras> {
   String get _rssUrl => 'https://ge.globo.com/rss/ge/futebol/times/$_nomeRss/';
 
   // Fonte única: lê o teamId diretamente do TimeInfo declarado em tela_config.dart
-  // Assim qualquer time adicionado lá fica automaticamente disponível aqui.
+  // Assim qualquer time adicionado lá fica automaticamente disponível aqui,
+  // sem precisar duplicar a lista de IDs em outro lugar (era exatamente essa
+  // duplicação que tinha causado os IDs errados antes).
   //
-  // IMPORTANTE: NÃO existe mais um fallback fixo para o ID do Palmeiras
-  // (1769). Se o time selecionado não for encontrado em nenhum dos mapas,
-  // retornamos -1 (ID inválido) — isso garante que o app nunca "acerte" por
-  // acidente o ID de outro time só porque ele existe na tabela.
+  // IMPORTANTE: se o time não for encontrado, retornamos -1 (ID inválido)
+  // de propósito — isso garante que o app nunca "acerte" por acidente o ID
+  // de outro time só porque ele existe em algum mapa de reserva.
   int get _teamId {
-    // 1) Fonte principal: timesDisponiveis (tela_config.dart)
     final viaConfig = timesDisponiveis[_timeKey]?.teamId ??
         timesDisponiveis[_nomeRss]?.teamId;
     if (viaConfig != null) return viaConfig;
 
-    // 2) Fallback local: mapa _teamIds desta classe (cobre o caso de o time
-    // ainda não ter sido cadastrado em tela_config.dart, mas já existir aqui)
-    final viaLocal = _teamIds[_timeKey] ?? _teamIds[_nomeRss];
-    if (viaLocal != null) return viaLocal;
-
-    // 3) Nenhuma fonte conhece esse time → ID inválido de propósito.
     debugPrint(
         'TelaPalmeiras: não foi possível resolver o teamId para "$_timeKey" / "$_nomeRss". '
-        'Verifique se o time está cadastrado em tela_config.dart ou em _teamIds.');
+        'Verifique se o time está cadastrado em tela_config.dart (timesDisponiveis).');
     return -1;
   }
 
