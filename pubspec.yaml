@@ -1,7 +1,7 @@
 name: mlion_droid
 description: Monitoramento MlionDroid
 
-version: 1.0.23+24
+version: 1.0.24+25
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
