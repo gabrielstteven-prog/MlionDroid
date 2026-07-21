@@ -173,7 +173,7 @@ class ConfigManager {
     // ── NOVO: Spotify ────────────────────────────────────────────────────────
     'spotify': {
       'client_id': '',
-      'redirect_uri': '',
+      'redirect_uri': 'https://localhost:8888/callback',
       'duracao_tela_seg': 30,
       'aparecer_na_rotacao': false, // fora da rotação automática por padrão
       'aparecer_por_evento': true, // interrompe ao trocar música por padrão

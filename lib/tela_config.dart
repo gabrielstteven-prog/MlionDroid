@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -1542,13 +1543,11 @@ class _TelaConfigState extends State<TelaConfig>
               _instrucaoStep('3',
                   'Faça login com sua conta Spotify e clique em "Create app"'),
               _instrucaoStep('4',
-                  'Preencha o nome, descrição e no campo Redirect URIs digite exatamente: https://localhost:8888/callback — depois clique em Add'),
-              _instrucaoStep('5',
-                  'ATENÇÃO no Redirect URI: precisa começar com https:// (com o "s") — sem o "s" o Spotify não aceita'),
+                  'Preencha o nome e a descrição. No campo Redirect URIs, cole o endereço fixo que está logo abaixo (toque para copiar) — depois clique em Add'),
               _instrucaoStep(
-                  '6', 'Marque "Web API", aceite os termos e clique em Save'),
+                  '5', 'Marque "Web API", aceite os termos e clique em Save'),
               _instrucaoStep(
-                  '7', 'Copie o Client ID que aparecer e cole no campo abaixo'),
+                  '6', 'Copie o Client ID que aparecer e cole no campo abaixo'),
             ],
           ),
         ),
@@ -1556,26 +1555,55 @@ class _TelaConfigState extends State<TelaConfig>
         _sectionTitle('🔑 Credenciais'),
         const SizedBox(height: 14),
         _glassCard(children: [
+          // Redirect URI é sempre o mesmo valor, pra qualquer pessoa que
+          // use o app — não é algo pessoal, então não pedimos pra digitar.
+          // Só mostramos pronto pra copiar e colar no Spotify Dashboard.
+          Row(children: [
+            Icon(Icons.link_rounded, color: _accent, size: 16),
+            const SizedBox(width: 8),
+            Text('Redirect URI (cole no Spotify Dashboard)',
+                style: GoogleFonts.poppins(
+                    color: Colors.white70,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600)),
+          ]),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () async {
+              await Clipboard.setData(
+                  const ClipboardData(text: 'https://localhost:8888/callback'));
+              if (context.mounted) {
+                _showSnack(context, '📋 Redirect URI copiado!',
+                    corBorda: _accent);
+              }
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: Colors.white.withValues(alpha: 0.06),
+                border: Border.all(color: _border),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text('https://localhost:8888/callback',
+                        style: GoogleFonts.poppins(
+                            color: Colors.white, fontSize: 15)),
+                  ),
+                  Icon(Icons.copy_rounded, color: Colors.white54, size: 18),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
           _textFieldConfig(
             'spotify',
             'client_id',
             'Client ID',
             'Cole aqui o Client ID do seu app Spotify',
             Icons.vpn_key_rounded,
-          ),
-          const SizedBox(height: 8),
-          _textFieldConfig(
-            'spotify',
-            'redirect_uri',
-            'Redirect URI',
-            'https://localhost:8888/callback',
-            Icons.link_rounded,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '⚠️  Digite exatamente: https://localhost:8888/callback\nCom "https://" (com o s) — e cadastre igual no Spotify Dashboard',
-            style: GoogleFonts.poppins(
-                color: Colors.white54, fontSize: 13, height: 1.5),
           ),
         ]),
         const SizedBox(height: 28),
