@@ -33,8 +33,10 @@ class _TelaFotosState extends State<TelaFotos>
   bool _carregando = true;
   Timer? _trocaTimer;
 
-  int get _segPorFoto => _cfg.getInt('fotos', 'duracao_por_foto_seg', 8).clamp(3, 60);
-  int get _porVisita => _cfg.getInt('fotos', 'fotos_por_visita', 4).clamp(1, 30);
+  int get _segPorFoto =>
+      _cfg.getInt('fotos', 'duracao_por_foto_seg', 8).clamp(3, 60);
+  int get _porVisita =>
+      _cfg.getInt('fotos', 'fotos_por_visita', 4).clamp(1, 30);
 
   @override
   void initState() {
@@ -95,40 +97,21 @@ class _TelaFotosState extends State<TelaFotos>
         policy: ResizeImagePolicy.fit,
       );
 
-  Future<void> _adicionar() async {
-    _trocaTimer?.cancel();
-    try {
-      final n = await FotosService.instance.adicionarDoSeletor();
-      if (n > 0) {
-        setState(() => _carregando = true);
-        await _carregar();
-        return;
-      }
-    } catch (e) {
-      debugPrint('TelaFotos adicionar: $e');
-    }
-    _agendarTroca();
-  }
-
   @override
   Widget build(BuildContext context) {
     final r = R(context);
     if (_carregando) return const Carregando(cor: Destaques.fotos);
     if (_fotos.isEmpty) {
-      return EstruturaTela(
+      return const EstruturaTela(
         icone: Icons.photo_library_rounded,
         titulo: 'Memórias',
         destaque: Destaques.fotos,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _adicionar,
-          child: const AvisoTela(
-            icone: Icons.add_photo_alternate_rounded,
-            titulo: 'Nenhuma foto ainda',
-            texto: 'Toque aqui para escolher fotos do tablet. Elas aparecem nesta '
-                'tela e como "Recordação do dia" no Bom Dia.',
-            cor: Destaques.fotos,
-          ),
+        child: AvisoTela(
+          icone: Icons.add_photo_alternate_rounded,
+          titulo: 'Nenhuma foto ainda',
+          texto: 'Adicione fotos em Configurações, na parte Memórias. Elas '
+              'aparecem aqui e como "Recordação do dia" no Bom Dia.',
+          cor: Destaques.fotos,
         ),
       );
     }
@@ -143,19 +126,48 @@ class _TelaFotosState extends State<TelaFotos>
           imagem: _provider(atual),
           kenBurns: _kenBurns,
           rodape: _rodape(r),
-          aoAdicionar: _adicionar,
         ),
       ),
     );
   }
 
+  /// Selo das Memórias no canto da foto, no estilo "stories": o título e uma
+  /// barrinha por foto (a atual acesa). Com muitas fotos vira "3 de 40".
   Widget _rodape(R r) {
-    return Row(
+    final t = Tipo(r);
+    final total = _fotos.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.photo_library_rounded, color: Destaques.fotos, size: r.icon(20)),
-        SizedBox(width: r.sp(8)),
-        Text('Memórias, ${_indice + 1} de ${_fotos.length}', style: Tipo(r).apoio(cor: Cores.texto)),
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.auto_awesome_rounded,
+              color: Destaques.fotos, size: r.icon(26)),
+          SizedBox(width: r.sp(10)),
+          Text('Memórias', style: t.subtitulo()),
+          if (total > 12) ...[
+            SizedBox(width: r.sp(12)),
+            Text('${_indice + 1} de $total', style: t.apoio()),
+          ],
+        ]),
+        if (total > 1 && total <= 12) ...[
+          SizedBox(height: r.sp(10)),
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            for (var i = 0; i < total; i++)
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 400),
+                width: r.sp(i == _indice ? 36 : 18),
+                height: r.sp(5),
+                margin: EdgeInsets.only(right: r.sp(6)),
+                decoration: BoxDecoration(
+                  color: i == _indice
+                      ? Cores.texto
+                      : Cores.texto.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(r.sp(3)),
+                ),
+              ),
+          ]),
+        ],
       ],
     );
   }
@@ -165,14 +177,12 @@ class _FotoComMoldura extends StatelessWidget {
   final ImageProvider imagem;
   final AnimationController kenBurns;
   final Widget rodape;
-  final VoidCallback aoAdicionar;
 
   const _FotoComMoldura({
     super.key,
     required this.imagem,
     required this.kenBurns,
     required this.rodape,
-    required this.aoAdicionar,
   });
 
   @override
@@ -194,68 +204,60 @@ class _FotoComMoldura extends StatelessWidget {
                   child: Image(image: imagem, fit: BoxFit.cover),
                 ),
         ),
-        ColoredBox(color: Colors.black.withValues(alpha: perf.preferirOverlaySolido ? 0.62 : 0.45)),
+        ColoredBox(
+            color: Colors.black
+                .withValues(alpha: perf.preferirOverlaySolido ? 0.62 : 0.45)),
         RepaintBoundary(
           child: Center(
-          child: Container(
-            width: r.w(r.isCompact ? 0.92 : 0.85),
-            height: r.h(r.isCompact ? 0.55 : 0.75),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(r.radius(36)),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1.2),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  blurRadius: perf.sombrasReduzidas ? 18 : 40,
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(r.radius(36)),
-              child: AnimatedBuilder(
-                animation: kenBurns,
-                builder: (_, child) =>
-                    Transform.scale(scale: 1.0 + kenBurns.value * 0.12, child: child),
-                child: Image(image: imagem, fit: BoxFit.cover, gaplessPlayback: true),
-              ),
-            ),
-          ),
-          ),
-        ),
-        Positioned(
-          top: 12,
-          left: 12,
-          child: GestureDetector(
-            onTap: aoAdicionar,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              width: r.w(r.isCompact ? 0.92 : 0.85),
+              height: r.h(r.isCompact ? 0.55 : 0.75),
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.45),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.add_photo_alternate_rounded,
-                      color: Colors.white70, size: r.icon(22)),
-                  const SizedBox(width: 8),
-                  Text('Adicionar fotos', style: Tipo(r).apoio(cor: Cores.texto)),
+                borderRadius: BorderRadius.circular(r.radius(36)),
+                border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.1), width: 1.2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    blurRadius: perf.sombrasReduzidas ? 18 : 40,
+                  ),
                 ],
               ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(r.radius(36)),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    AnimatedBuilder(
+                      animation: kenBurns,
+                      builder: (_, child) => Transform.scale(
+                          scale: 1.0 + kenBurns.value * 0.12, child: child),
+                      child: Image(
+                          image: imagem,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true),
+                    ),
+                    // Degradê embaixo para o selo ler bem sobre qualquer foto.
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: r.sp(170),
+                      child: const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Colors.transparent, Color(0xB3000000)],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(left: r.sp(28), bottom: r.sp(24), child: rodape),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
-        Positioned(
-          bottom: 15,
-          right: 20,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: rodape,
           ),
         ),
       ],

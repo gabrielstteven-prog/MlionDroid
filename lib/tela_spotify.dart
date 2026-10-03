@@ -645,6 +645,8 @@ class _TelaSpotifyState extends State<TelaSpotify> {
   void dispose() {
     _saidaTimer?.cancel();
     _spotify.removeListener(_onUpdate);
+    // Devolve o céu da hora (depois do quadro: a árvore está travada aqui).
+    Future.microtask(() => CeuDeFundo.corDaTela.value = null);
     super.dispose();
   }
 
@@ -661,7 +663,10 @@ class _TelaSpotifyState extends State<TelaSpotify> {
     if (bytes != null && !identical(bytes, _bytesCor)) {
       _bytesCor = bytes;
       MusicaService.corDaCapa(bytes).then((c) {
-        if (mounted && c != null) setState(() => _corCapa = c);
+        if (mounted && c != null) {
+          setState(() => _corCapa = c);
+          CeuDeFundo.corDaTela.value = c;
+        }
       });
     }
     setState(() {});
@@ -705,21 +710,15 @@ class _TelaSpotifyState extends State<TelaSpotify> {
 
     final track = _spotify.faixaAtual;
     final r = R(context);
-    final cor = _corCapa ?? const Color(0xFF14361F);
+    if (_corCapa == null && CeuDeFundo.corDaTela.value == null) {
+      Future.microtask(() => CeuDeFundo.corDaTela.value ??= const Color(0xFF14361F));
+    }
 
     return GestureDetector(
       onTap: _iniciarTimerSaida,
-      child: AnimatedContainer(
-        duration: const Duration(seconds: 2),
-        // Fundo na cor da capa do álbum (antes: blur sigma 90, o efeito
-        // mais caro do app inteiro).
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [cor, Color.lerp(cor, Colors.black, 0.65)!],
-          ),
-        ),
+      // O fundo na cor da capa é pintado pelo CeuDeFundo do app inteiro —
+      // assim o cabeçalho entra no mesmo degradê (antes ficava um "quadrado").
+      child: SizedBox.expand(
         child: track == null
             ? const AvisoTela(
                 icone: Icons.music_off_rounded,

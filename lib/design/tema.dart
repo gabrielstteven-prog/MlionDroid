@@ -113,11 +113,33 @@ class CeuDeFundo extends StatelessWidget {
   final Widget child;
   const CeuDeFundo({super.key, required this.agora, required this.child});
 
+  /// Quando uma tela quer pintar o app inteiro (ex.: Spotify na cor da capa
+  /// do disco), ela põe a cor aqui — o céu, inclusive atrás do cabeçalho,
+  /// vira um degradê dessa cor. `null` volta ao céu da hora.
+  static final ValueNotifier<Color?> corDaTela = ValueNotifier(null);
+
   @override
   Widget build(BuildContext context) {
-    final ceu = ceuDoPeriodo(periodoDaHora(agora.hour));
+    return ValueListenableBuilder<Color?>(
+      valueListenable: corDaTela,
+      builder: (context, cor, _) => _pintar(cor),
+    );
+  }
+
+  Widget _pintar(Color? cor) {
+    final ceu = cor == null
+        ? ceuDoPeriodo(periodoDaHora(agora.hour))
+        : Ceu(
+            [
+              Color.lerp(cor, Colors.black, 0.15)!,
+              Color.lerp(cor, Colors.black, 0.5)!,
+              Color.lerp(cor, Colors.black, 0.78)!,
+            ],
+            cor.withValues(alpha: 0.35),
+            Alignment.topLeft,
+          );
     return AnimatedContainer(
-      duration: const Duration(seconds: 20),
+      duration: Duration(seconds: cor == null ? 20 : 2),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,

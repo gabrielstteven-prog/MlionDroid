@@ -241,8 +241,7 @@ class _TelaTabelaState extends State<TelaTabela> {
     final t = Tipo(r);
     final d = jogo.data;
     final local = [jogo.estadio, jogo.cidade].where((s) => s.isNotEmpty).join(', ');
-    final canais = _tv?.canais ?? const <String>[];
-    final pertoDoJogo = soData(d).difference(soData(DateTime.now())).inDays <= 1;
+    final canais = (_tv?.canais ?? const <String>[]).map(nomeDoCanal).toList();
     final mostrarCanais = _cfg.getBool('proxima_partida', 'mostrar_canais', true);
 
     Widget item(IconData icone, String rotulo, String valor, {Color? cor}) => Expanded(
@@ -279,7 +278,7 @@ class _TelaTabelaState extends State<TelaTabela> {
               'Onde assistir',
               canais.isNotEmpty
                   ? canais.join(', ')
-                  : (pertoDoJogo ? 'Não informado' : 'Divulgado na véspera'),
+                  : 'A confirmar',
               cor: canais.isNotEmpty ? Cores.aviso : null,
             ),
         ],
@@ -364,7 +363,7 @@ class _TelaTabelaState extends State<TelaTabela> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Depois', style: t.legenda()),
+              Text('Próximas partidas', style: t.legenda()),
               SizedBox(height: r.sp(10)),
               for (final p in seguintes)
                 Padding(
@@ -399,4 +398,34 @@ class _TelaTabelaState extends State<TelaTabela> {
           style: Tipo(r).legenda(cor: Colors.black).copyWith(fontWeight: FontWeight.w800)),
     );
   }
+}
+
+/// O site escreve os canais em maiúsculas ("GLOBO", "PREMIERE 2"); na tela
+/// fica mais fácil de ler com a grafia de cada marca.
+String nomeDoCanal(String s) {
+  const marcas = {
+    'sportv': 'SporTV',
+    'ge tv': 'ge TV',
+    'cazetv': 'CazéTV',
+    'espn': 'ESPN',
+    'tnt': 'TNT',
+    'hbo max': 'HBO Max',
+    'max': 'Max',
+    'record': 'Record',
+    'sbt': 'SBT',
+    'band': 'Band',
+    'paramount+': 'Paramount+',
+    'disney+': 'Disney+',
+    'amazon prime video': 'Prime Video',
+    'prime video': 'Prime Video',
+  };
+  final baixo = s.trim().toLowerCase();
+  for (final e in marcas.entries) {
+    if (baixo == e.key) return e.value;
+    if (baixo.startsWith('${e.key} ')) return '${e.value}${s.trim().substring(e.key.length)}';
+  }
+  return baixo
+      .split(' ')
+      .map((p) => p.isEmpty ? p : '${p[0].toUpperCase()}${p.substring(1)}')
+      .join(' ');
 }

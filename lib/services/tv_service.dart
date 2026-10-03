@@ -78,38 +78,68 @@ class TvService {
     return jogos;
   }
 
+  Future<String> _baixar(String caminho) async {
+    final res = await http.get(Uri.parse('$_site$caminho'),
+        headers: {'User-Agent': _ua}).timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+    return res.body;
+  }
+
   Future<List<JogoNaTv>> _jogosDaPagina(String caminho, String chave) async {
     final entrada = await buscarComCache<List<dynamic>>(
       chave: chave,
       validade: const Duration(hours: 1),
-      buscar: () async {
-        final res = await http.get(Uri.parse('$_site$caminho'),
-            headers: {'User-Agent': _ua}).timeout(const Duration(seconds: 15));
-        if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
-        return parsePagina(res.body).map((j) => j.toJson()).toList();
-      },
+      buscar: () async =>
+          parsePagina(await _baixar(caminho)).map((j) => j.toJson()).toList(),
     );
     return (entrada?.dados ?? [])
         .map((e) => JogoNaTv.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
   }
 
-  /// Procura o jogo de [nomesTime] contra [nomesAdversario] em [data].
-  /// Só consulta hoje e amanhã (é o que o site publica com canais).
+  /// Acha o link da página do time na lista de times do site
+  /// (ex.: "/time/palmeiras-va41lxp2r4"). Função pura — testada.
+  static String? caminhoDoTime(String htmlTimes, List<String> nomes) {
+    final alvos = nomes.map(normalizar).where((n) => n.isNotEmpty).toSet();
+    for (final m
+        in RegExp(r'href="(/time/([a-z0-9-]+)-[a-z0-9]+)"').allMatches(htmlTimes)) {
+      if (alvos.contains(m.group(2)!.replaceAll('-', ' '))) return m.group(1);
+    }
+    return null;
+  }
+
+  /// Página do time: traz o próximo jogo JÁ com os canais, dias antes
+  /// (a emissora sai junto com a tabela detalhada da rodada).
+  Future<JogoNaTv?> _pelaPaginaDoTime(
+      List<String> nomesTime, List<String> nomesAdversario) async {
+    final entrada = await buscarComCache<String>(
+      chave: 'tv_caminho_${normalizar(nomesTime.first)}',
+      validade: const Duration(days: 30),
+      buscar: () async => caminhoDoTime(await _baixar('/times'), nomesTime) ?? '',
+    );
+    final caminho = entrada?.dados ?? '';
+    if (caminho.isEmpty) return null;
+    final jogos = await _jogosDaPagina(caminho, 'tv_pagina_$caminho');
+    // A página mostra o "Último jogo" antes do "Próximo jogo": procura de trás
+    // para frente para não pegar o jogo de ida num confronto de ida e volta.
+    return encontrarJogo(jogos.reversed.toList(), nomesTime, nomesAdversario);
+  }
+
+  /// Procura o jogo de [nomesTime] contra [nomesAdversario] em [data]:
+  /// primeiro na página do time (vale com dias de antecedência), depois na
+  /// programação de hoje/amanhã do site.
   Future<JogoNaTv?> buscarJogo({
     required DateTime data,
     required List<String> nomesTime,
     required List<String> nomesAdversario,
   }) async {
+    try {
+      final j = await _pelaPaginaDoTime(nomesTime, nomesAdversario);
+      if (j != null && j.canais.isNotEmpty) return j;
+    } catch (_) {}
     final dias = soData(data).difference(soData(DateTime.now())).inDays;
-    final String caminho;
-    if (dias == 0) {
-      caminho = '/jogos-hoje';
-    } else if (dias == 1) {
-      caminho = '/jogos-amanha';
-    } else {
-      return null;
-    }
+    if (dias != 0 && dias != 1) return null;
+    final caminho = dias == 0 ? '/jogos-hoje' : '/jogos-amanha';
     final chave = 'tv_${caminho.substring(1)}_${soData(data).toIso8601String()}';
     try {
       final jogos = await _jogosDaPagina(caminho, chave);

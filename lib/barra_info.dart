@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import 'design/icones.dart';
 import 'design/tema.dart';
@@ -71,7 +72,10 @@ class BarraInfo extends StatelessWidget {
                   // Relógio à esquerda, clima ao centro, ações à direita.
                   const Expanded(
                       child: Align(alignment: Alignment.centerLeft, child: _Relogio())),
-                  const _Clima(),
+                  // Na tela de Clima o tempo já está em destaque: o topo fica
+                  // livre. Em dia de jogo, o placar ao vivo aparece ao lado.
+                  if (telaAtual != 'clima') const _Clima(),
+                  const _PlacarAoVivo(),
                   const Expanded(child: SizedBox()),
                   ListenableBuilder(
                     listenable: UpdateManager.instance,
@@ -147,15 +151,14 @@ class _Clima extends StatelessWidget {
               ? const SizedBox.shrink()
               : Text('Sem dados de clima', style: t.apoio());
         }
-        final chuva = c.chuvaRestanteHoje().maxima;
         return FittedBox(
           fit: BoxFit.scaleDown,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              IconeClima(codigo: c.codigo, ehDia: c.ehDia, tamanho: r.icon(72)),
+              IconeClima(codigo: c.codigo, ehDia: c.ehDia, tamanho: r.icon(60)),
               SizedBox(width: r.sp(8)),
-              Text('${c.temp}°', style: t.numero().copyWith(fontSize: r.fs(64))),
+              Text('${c.temp}°', style: t.numero()),
               SizedBox(width: r.sp(16)),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -165,23 +168,6 @@ class _Clima extends StatelessWidget {
                   Text('Sensação de ${c.sensacao}°', style: t.apoio()),
                 ],
               ),
-              if (chuva >= 30) ...[
-                SizedBox(width: r.sp(20)),
-                // Chuva vira um destaque próprio, visível de longe.
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: r.sp(16), vertical: r.sp(10)),
-                  decoration: BoxDecoration(
-                    color: Cores.chuva.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(r.sp(30)),
-                    border: Border.all(color: Cores.chuva.withValues(alpha: 0.55)),
-                  ),
-                  child: Row(children: [
-                    Icon(Icons.umbrella_rounded, color: Cores.chuva, size: r.icon(26)),
-                    SizedBox(width: r.sp(8)),
-                    Text('$chuva%', style: t.subtitulo(cor: Cores.texto)),
-                  ]),
-                ),
-              ],
             ],
           ),
         );
@@ -550,6 +536,73 @@ class MlionShell extends StatelessWidget {
               ],
             )
           : child,
+    );
+  }
+}
+
+/// Placar ao vivo no topo, estilo "cartão do Google": aparece sozinho perto
+/// do jogo do time (até 90 min antes, durante e 30 min depois) e some depois.
+class _PlacarAoVivo extends StatelessWidget {
+  const _PlacarAoVivo();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Tipo.de(context);
+    final r = t.r;
+    return ValueListenableBuilder<Partida?>(
+      valueListenable: FootballService.instance.jogoDoMomento,
+      builder: (context, p, _) {
+        if (p == null) return const SizedBox.shrink();
+        Widget escudo(TimePartida time) => time.escudo.isEmpty
+            ? Icon(Icons.shield_rounded, color: Cores.textoApagado, size: r.icon(30))
+            : CachedNetworkImage(
+                imageUrl: time.escudo,
+                width: r.icon(34),
+                height: r.icon(34),
+                errorWidget: (_, __, ___) =>
+                    Icon(Icons.shield_rounded, color: Cores.textoApagado, size: r.icon(30)),
+              );
+        final placar = p.agendada
+            ? horaMinuto(p.data)
+            : '${p.mandante.gols ?? 0} x ${p.visitante.gols ?? 0}';
+        final status = p.aoVivo
+            ? (p.detalhe.isNotEmpty && p.relogio.isEmpty ? p.detalhe : p.relogio)
+            : p.encerrada
+                ? 'Fim'
+                : 'Hoje';
+        final cor = p.aoVivo ? Cores.alerta : Cores.textoSecundario;
+        return Padding(
+          padding: EdgeInsets.only(left: r.sp(24)),
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: r.sp(16), vertical: r.sp(8)),
+            decoration: BoxDecoration(
+              color: Cores.superficie,
+              borderRadius: BorderRadius.circular(r.sp(30)),
+              border: Border.all(color: cor.withValues(alpha: p.aoVivo ? 0.7 : 0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                escudo(p.mandante),
+                SizedBox(width: r.sp(10)),
+                Text(placar, style: t.subtitulo()),
+                SizedBox(width: r.sp(10)),
+                escudo(p.visitante),
+                SizedBox(width: r.sp(12)),
+                if (p.aoVivo) ...[
+                  Container(
+                    width: r.sp(10),
+                    height: r.sp(10),
+                    decoration: BoxDecoration(color: cor, shape: BoxShape.circle),
+                  ),
+                  SizedBox(width: r.sp(6)),
+                ],
+                Text(status, style: t.apoio(cor: cor)),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

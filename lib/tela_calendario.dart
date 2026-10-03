@@ -145,7 +145,8 @@ class _TelaCalendarioState extends State<TelaCalendario>
   // ── AUTH + CARREGAMENTO ───────────────────────────────────────────────────
   static const _chaveCache = 'calendario_itens_v2';
 
-  int get _duracaoSeg => _cfg.getInt('calendario', 'duracao_seg', 35).clamp(10, 300);
+  int get _duracaoSeg =>
+      _cfg.getInt('calendario', 'duracao_seg', 35).clamp(10, 300);
 
   Future<void> _autenticarECarregar() async {
     // Login SILENCIOSO apenas — a janela de escolher conta só abre pelo
@@ -159,10 +160,12 @@ class _TelaCalendarioState extends State<TelaCalendario>
     if (!mounted) return;
     if (cache != null) _aplicarCache(cache);
 
-    final venceu =
-        cache == null || cache.venceu(_cfg.getIntervaloAtualizacao('calendario'));
+    final venceu = cache == null ||
+        cache.venceu(_cfg.getIntervaloAtualizacao('calendario'));
     if (_client != null && venceu) {
-      if (cache == null) setState(() => _statusMsg = 'Carregando agenda do Google...');
+      if (cache == null) {
+        setState(() => _statusMsg = 'Carregando agenda do Google...');
+      }
       try {
         final novos = <DateTime, List<ItemAgenda>>{};
         await Future.wait([_carregarEventos(novos), _carregarTarefas(novos)]);
@@ -204,12 +207,14 @@ class _TelaCalendarioState extends State<TelaCalendario>
   Future<void> _salvarCache() async {
     final serializado = <String, dynamic>{};
     _itensPorDia.forEach((dia, lista) {
-      serializado[dia.toIso8601String()] = lista.map((i) => i.toJson()).toList();
+      serializado[dia.toIso8601String()] =
+          lista.map((i) => i.toJson()).toList();
     });
     await CacheManager.instance.salvar(_chaveCache, serializado);
   }
 
-  void _adicionar(Map<DateTime, List<ItemAgenda>> mapa, DateTime dia, ItemAgenda item) {
+  void _adicionar(
+      Map<DateTime, List<ItemAgenda>> mapa, DateTime dia, ItemAgenda item) {
     (mapa[_chave(dia)] ??= []).add(item);
   }
 
@@ -238,7 +243,9 @@ class _TelaCalendarioState extends State<TelaCalendario>
             titulo: ev.summary ?? 'Sem título',
             tipo: TipoItem.evento,
             aniversario: ev.eventType == 'birthday',
-            horario: ev.start?.dateTime != null ? DateFormat('HH:mm').format(local) : null,
+            horario: ev.start?.dateTime != null
+                ? DateFormat('HH:mm').format(local)
+                : null,
             dataHora: local,
           ));
     }
@@ -263,7 +270,9 @@ class _TelaCalendarioState extends State<TelaCalendario>
           // 'due' do Google Tasks é sempre meia-noite UTC: usa só a data,
           // sem converter fuso (converter mudaria o dia).
           final parsed = DateTime.tryParse(t.due!)?.toUtc();
-          if (parsed != null) due = DateTime(parsed.year, parsed.month, parsed.day);
+          if (parsed != null) {
+            due = DateTime(parsed.year, parsed.month, parsed.day);
+          }
         }
         if (due == null && concluida) continue;
         _adicionar(
@@ -410,16 +419,18 @@ class _TelaCalendarioState extends State<TelaCalendario>
     return EstruturaTela(
       icone: Icons.calendar_month_rounded,
       marca: IconeGoogleAgenda(tamanho: r.sp(52), dia: _hoje.day),
-      titulo: 'Agenda',
+      titulo: 'Google Agenda',
       subtitulo: DateFormat("EEEE, d 'de' MMMM", 'pt_BR').format(_hoje),
       destaque: _corEvento,
-      rodapeDireita:
-          _atualizadoEm != null ? 'Atualizado ${descreverIdade(_atualizadoEm!)}' : null,
+      rodapeDireita: _atualizadoEm != null
+          ? 'Atualizado ${descreverIdade(_atualizadoEm!)}'
+          : null,
       child: _semConta
           ? const AvisoTela(
               icone: Icons.account_circle_outlined,
               titulo: 'Conta Google não conectada',
-              texto: 'Abra Configurações › Calendário e toque em "Conectar conta Google".',
+              texto:
+                  'Abra Configurações › Calendário e toque em "Conectar conta Google".',
               cor: _corEvento,
             )
           : _carregando
@@ -462,7 +473,10 @@ class _TelaCalendarioState extends State<TelaCalendario>
         SizedBox(height: r.sp(20)),
         Expanded(
             child: _buildLista(
-                titulo: 'Amanhã', itens: _itensAmanha, ctrl: _scrollAmanha, r: r)),
+                titulo: 'Amanhã',
+                itens: _itensAmanha,
+                ctrl: _scrollAmanha,
+                r: r)),
       ],
     );
   }
@@ -470,95 +484,111 @@ class _TelaCalendarioState extends State<TelaCalendario>
   // ── CALENDÁRIO DO MÊS ─────────────────────────────────────────────────────
   Widget _buildCalendario(R r) {
     final t = Tipo(r);
-    return Superficie(
-      padding: EdgeInsets.fromLTRB(r.sp(16), r.sp(16), r.sp(16), r.sp(8)),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Text(_capitalizar(DateFormat('MMMM yyyy', 'pt_BR').format(_hoje)),
-                  style: t.subtitulo()),
-              const Spacer(),
-              _legenda(_corEvento, 'Evento', r),
-              SizedBox(width: r.sp(14)),
-              _legenda(_corTarefa, 'Tarefa', r),
-              SizedBox(width: r.sp(14)),
-              _legenda(_corAtraso, 'Atrasada', r),
-            ],
-          ),
-          SizedBox(height: r.sp(8)),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, box) => TableCalendar(
-                locale: 'pt_BR',
-                focusedDay: _diaSelecionado ?? _hoje,
-                firstDay: DateTime.utc(2020),
-                lastDay: DateTime.utc(2035),
-                shouldFillViewport: true,
-                daysOfWeekHeight: r.sp(32),
-                headerVisible: false,
-                availableGestures: AvailableGestures.none,
-                selectedDayPredicate: (d) =>
-                    _diaSelecionado != null && _chave(d) == _chave(_diaSelecionado!),
-                onDaySelected: (sel, _) => _tocarNoDia(sel),
-                eventLoader: (d) => _itensPorDia[_chave(d)] ?? [],
-                daysOfWeekStyle: DaysOfWeekStyle(
-                  weekdayStyle: t.legenda(),
-                  weekendStyle: t.legenda(),
-                ),
-                calendarStyle: const CalendarStyle(
-                  outsideDaysVisible: false,
-                  markersMaxCount: 0,
-                ),
-                calendarBuilders: CalendarBuilders(
-                  defaultBuilder: (_, d, __) => _diaCell(d, false, false, r),
-                  todayBuilder: (_, d, __) => _diaCell(d, true, false, r),
-                  selectedBuilder: (_, d, __) => _diaCell(d, _chave(d) == _chave(_hoje), true, r),
-                ),
+    return Align(
+      alignment: Alignment.topCenter,
+      child: Superficie(
+        padding: EdgeInsets.fromLTRB(r.sp(16), r.sp(16), r.sp(16), r.sp(8)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Text(
+                    _capitalizar(
+                        DateFormat('MMMM yyyy', 'pt_BR').format(_hoje)),
+                    style: t.subtitulo()),
+                const Spacer(),
+                _legenda(_corEvento, 'Evento', r),
+                SizedBox(width: r.sp(14)),
+                _legenda(_corTarefa, 'Tarefa', r),
+                SizedBox(width: r.sp(14)),
+                _legenda(_corAtraso, 'Atrasada', r),
+                SizedBox(width: r.sp(14)),
+                _legenda(_corAniversario, 'Aniversário', r),
+              ],
+            ),
+            SizedBox(height: r.sp(8)),
+            TableCalendar(
+              locale: 'pt_BR',
+              focusedDay: _diaSelecionado ?? _hoje,
+              firstDay: DateTime.utc(2020),
+              lastDay: DateTime.utc(2035),
+              // Linhas compactas: o círculo já diz tudo, sem sobra de espaço.
+              rowHeight: r.sp(64),
+              daysOfWeekHeight: r.sp(32),
+              headerVisible: false,
+              availableGestures: AvailableGestures.none,
+              selectedDayPredicate: (d) =>
+                  _diaSelecionado != null &&
+                  _chave(d) == _chave(_diaSelecionado!),
+              onDaySelected: (sel, _) => _tocarNoDia(sel),
+              eventLoader: (d) => _itensPorDia[_chave(d)] ?? [],
+              daysOfWeekStyle: DaysOfWeekStyle(
+                weekdayStyle: t.legenda(),
+                weekendStyle: t.legenda(),
+              ),
+              calendarStyle: const CalendarStyle(
+                outsideDaysVisible: false,
+                markersMaxCount: 0,
+              ),
+              calendarBuilders: CalendarBuilders(
+                defaultBuilder: (_, d, __) => _diaCell(d, false, false, r),
+                todayBuilder: (_, d, __) => _diaCell(d, true, false, r),
+                selectedBuilder: (_, d, __) =>
+                    _diaCell(d, _chave(d) == _chave(_hoje), true, r),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  String _capitalizar(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+  String _capitalizar(String s) =>
+      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
+  /// Um círculo por dia, sem pontinhos: a COR do círculo é a situação.
+  /// Hoje = círculo cheio branco; atrasada > tarefa > evento > aniversário
+  /// = anel na cor da legenda (com fundo leve).
   Widget _diaCell(DateTime day, bool isHoje, bool isSel, R r) {
     final t = Tipo(r);
     final itens = _itensPorDia[_chave(day)] ?? const <ItemAgenda>[];
-    final temEvento = itens.any((i) => i.tipo == TipoItem.evento && !i.aniversario);
-    final temTarefa = itens.any((i) => i.tipo == TipoItem.tarefa && !i.concluido);
-    final temAniversario = itens.any((i) => i.aniversario);
-    final atrasado = _temTarefaAtrasada(day);
+    final Color? situacao = _temTarefaAtrasada(day)
+        ? _corAtraso
+        : itens.any((i) => i.tipo == TipoItem.tarefa && !i.concluido)
+            ? _corTarefa
+            : itens.any((i) => i.tipo == TipoItem.evento && !i.aniversario)
+                ? _corEvento
+                : itens.any((i) => i.aniversario)
+                    ? _corAniversario
+                    : null;
 
-    return Container(
-      margin: EdgeInsets.all(r.sp(3)),
-      decoration: BoxDecoration(
-        color: isHoje ? _corEvento : null,
-        borderRadius: BorderRadius.circular(r.sp(14)),
-        border: isSel && !isHoje ? Border.all(color: Cores.texto, width: 2) : null,
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text('${day.day}',
-              style: t.corpo(
-                cor: isHoje ? Colors.black : (atrasado ? _corAtraso : Cores.texto),
-                peso: isHoje ? FontWeight.w800 : FontWeight.w500,
-              )),
-          SizedBox(height: r.sp(2)),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (temEvento) _ponto(isHoje ? Colors.black : _corEvento, r),
-              if (temTarefa && !atrasado) _ponto(isHoje ? Colors.black : _corTarefa, r),
-              if (atrasado) _ponto(_corAtraso, r),
-              if (temAniversario) _ponto(isHoje ? Colors.black : _corAniversario, r),
-            ],
-          ),
-        ],
+    final diametro = r.sp(50);
+    return Center(
+      child: Container(
+        width: diametro,
+        height: diametro,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: isHoje ? Cores.texto : situacao?.withValues(alpha: 0.22),
+          border: isHoje
+              ? (situacao != null
+                  ? Border.all(color: situacao, width: 3.5)
+                  : null)
+              : situacao != null
+                  ? Border.all(color: situacao, width: 2.5)
+                  : isSel
+                      ? Border.all(color: Cores.texto, width: 2)
+                      : null,
+        ),
+        child: Text('${day.day}',
+            style: t.corpo(
+              cor: isHoje ? Colors.black : Cores.texto,
+              peso: isHoje || situacao != null
+                  ? FontWeight.w800
+                  : FontWeight.w500,
+            )),
       ),
     );
   }
@@ -595,7 +625,8 @@ class _TelaCalendarioState extends State<TelaCalendario>
           Text(titulo, style: t.subtitulo()),
           SizedBox(width: r.sp(10)),
           if (pend.isNotEmpty)
-            Text(pend.length == 1 ? '1 item' : '${pend.length} itens', style: t.apoio()),
+            Text(pend.length == 1 ? '1 item' : '${pend.length} itens',
+                style: t.apoio()),
         ]),
         SizedBox(height: r.sp(10)),
         Expanded(
@@ -627,16 +658,20 @@ class _TelaCalendarioState extends State<TelaCalendario>
       children: [
         Row(children: [
           Expanded(
-            child: Text(_capitalizar(DateFormat("EEEE, d 'de' MMMM", 'pt_BR').format(dia)),
+            child: Text(
+                _capitalizar(
+                    DateFormat("EEEE, d 'de' MMMM", 'pt_BR').format(dia)),
                 style: t.subtitulo(cor: atrasado ? _corAtraso : Cores.texto)),
           ),
           IconButton(
             onPressed: _fecharPainelDia,
-            icon: Icon(Icons.close_rounded, color: Cores.textoSecundario, size: r.icon(28)),
+            icon: Icon(Icons.close_rounded,
+                color: Cores.textoSecundario, size: r.icon(28)),
           ),
         ]),
         if (atrasado)
-          Text('${pend.length} tarefa(s) atrasada(s)', style: t.apoio(cor: _corAtraso)),
+          Text('${pend.length} tarefa(s) atrasada(s)',
+              style: t.apoio(cor: _corAtraso)),
         SizedBox(height: r.sp(10)),
         Expanded(
           child: ListView(
@@ -661,13 +696,16 @@ class _TelaCalendarioState extends State<TelaCalendario>
   Widget _itemLinha(ItemAgenda item, R r) {
     final t = Tipo(r);
     final isEv = item.tipo == TipoItem.evento;
-    final cor = item.aniversario ? _corAniversario : (isEv ? _corEvento : _corTarefa);
+    final cor =
+        item.aniversario ? _corAniversario : (isEv ? _corEvento : _corTarefa);
     final marcando = _marcando.contains(item.id);
     final icone = item.aniversario
         ? Icons.cake_rounded
         : isEv
             ? Icons.event_rounded
-            : (item.concluido ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded);
+            : (item.concluido
+                ? Icons.check_circle_rounded
+                : Icons.radio_button_unchecked_rounded);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: isEv ? null : () => _alternarTarefa(item),
@@ -682,8 +720,11 @@ class _TelaCalendarioState extends State<TelaCalendario>
                   ? SizedBox(
                       width: r.icon(24),
                       height: r.icon(24),
-                      child: CircularProgressIndicator(strokeWidth: 2, color: cor))
-                  : Icon(icone, color: item.concluido ? Cores.textoApagado : cor, size: r.icon(26)),
+                      child:
+                          CircularProgressIndicator(strokeWidth: 2, color: cor))
+                  : Icon(icone,
+                      color: item.concluido ? Cores.textoApagado : cor,
+                      size: r.icon(26)),
             ),
             SizedBox(width: r.sp(8)),
             Expanded(
@@ -694,17 +735,23 @@ class _TelaCalendarioState extends State<TelaCalendario>
                     item.titulo,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: t.corpo(
-                      cor: item.concluido ? Cores.textoApagado : Cores.texto,
-                      peso: FontWeight.w600,
-                    ).copyWith(
-                        decoration: item.concluido ? TextDecoration.lineThrough : null,
-                        decorationColor: Cores.textoApagado),
+                    style: t
+                        .corpo(
+                          cor:
+                              item.concluido ? Cores.textoApagado : Cores.texto,
+                          peso: FontWeight.w600,
+                        )
+                        .copyWith(
+                            decoration: item.concluido
+                                ? TextDecoration.lineThrough
+                                : null,
+                            decorationColor: Cores.textoApagado),
                   ),
                   if (item.horario != null || item.semData)
                     Text(
                       item.horario ?? 'Sem data definida',
-                      style: t.apoio(cor: item.horario != null ? cor : Cores.textoApagado),
+                      style: t.apoio(
+                          cor: item.horario != null ? cor : Cores.textoApagado),
                     ),
                 ],
               ),

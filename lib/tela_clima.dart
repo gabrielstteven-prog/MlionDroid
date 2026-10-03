@@ -133,6 +133,8 @@ class _TelaClimaState extends State<TelaClima> {
   List<Aviso> _avisos = [];
   bool _mapaPronto = false;
   Timer? _saidaTimer;
+  bool _tempoCumprido = false;
+  bool _avisosVistos = false;
 
   @override
   void initState() {
@@ -157,7 +159,12 @@ class _TelaClimaState extends State<TelaClima> {
       // Avisos da previsão na hora; os oficiais (INMET) chegam em seguida.
       setState(() => _avisos = AvisosService.daPrevisao(dados, DateTime.now()));
       AvisosService.instance.avisos().then((a) {
-        if (mounted) setState(() => _avisos = a);
+        if (mounted) {
+          setState(() {
+            _avisos = a;
+            _avisosVistos = false; // lista nova: o ciclo recomeça
+          });
+        }
       });
     }
     // Com chance de chuva, abre direto no radar; senão, na previsão.
@@ -165,8 +172,16 @@ class _TelaClimaState extends State<TelaClima> {
     final chovendo = (dados?.codigo ?? 0) >= 51;
     _trocarModo(chuva >= 30 || chovendo ? ModoMapa.radar : ModoMapa.previsao);
     _saidaTimer = Timer(Duration(seconds: dados == null ? 6 : _duracaoSeg), () {
-      if (mounted) widget.aoTerminar();
+      _tempoCumprido = true;
+      _tentarSair(semAvisos: dados == null);
     });
+  }
+
+  /// A tela só segue quando o tempo dela acabou E todos os avisos já
+  /// passaram pelo card — com 4 avisos, ninguém perde o terceiro.
+  void _tentarSair({bool semAvisos = false}) {
+    if (!mounted || !_tempoCumprido) return;
+    if (_avisosVistos || semAvisos) widget.aoTerminar();
   }
 
   void _trocarModo(ModoMapa modo, {bool forcar = false}) {
@@ -229,11 +244,10 @@ class _TelaClimaState extends State<TelaClima> {
     );
   }
 
-  // ── Painel: agora, aviso, próximas horas, próximos dias ──────────────────
+  // ── Painel: agora, avisos e próximos dias (as horas de chuva já vêm no aviso) ──────────────────
   Widget _painel(R r, DadosClima d) {
     final t = Tipo(r);
     final hoje = d.hoje;
-    final horas = d.proximasHoras(6);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -258,6 +272,10 @@ class _TelaClimaState extends State<TelaClima> {
         ),
         SizedBox(height: r.sp(14)),
         CardAvisos(
+          aoCompletarCiclo: () {
+            _avisosVistos = true;
+            _tentarSair();
+          },
           avisos: _avisos.isNotEmpty
               ? _avisos
               : const [
@@ -269,63 +287,48 @@ class _TelaClimaState extends State<TelaClima> {
                       'Previsão'),
                 ],
         ),
-        SizedBox(height: r.sp(16)),
-        if (horas.isNotEmpty) ...[
-          Text('Próximas horas', style: t.legenda()),
-          SizedBox(height: r.sp(8)),
-          Row(
-            children: [
-              for (final h in horas)
-                Expanded(
-                  child: Column(
-                    children: [
-                      Text('${h.hora.hour}h', style: t.apoio(cor: Cores.texto)),
-                      IconeClima(
-                          codigo: h.codigo,
-                          ehDia: h.hora.hour >= 6 && h.hora.hour < 18,
-                          tamanho: r.icon(48),
-                          animar: false),
-                      Text('${h.temp}°', style: t.corpo(peso: FontWeight.w700)),
-                      Text(h.chuva >= 20 ? '${h.chuva}%' : ' ',
-                          style: t.legenda(cor: Cores.chuva)),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-          SizedBox(height: r.sp(12)),
-        ],
-        Text('Próximos dias', style: t.legenda()),
-        SizedBox(height: r.sp(8)),
+        // Título e dias juntos, centralizados no espaço que sobra.
         Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final dia in d.proximosDias.take(4))
-                Expanded(
-                  // scaleDown: em telas mais baixas o dia encolhe em vez de cortar.
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.topCenter,
-                    child: Column(
-                      children: [
-                        Text(diaSemanaCurto(dia.dia),
-                            style: t.corpo(peso: FontWeight.w700)),
-                        IconeClima(
-                            codigo: dia.codigo,
-                            tamanho: r.icon(60),
-                            animar: false),
-                        Text('${dia.max}° / ${dia.min}°',
-                            style: t
-                                .subtitulo()
-                                .copyWith(fontWeight: FontWeight.w500)),
-                        if (dia.chanceChuva >= 20)
-                          Text('${dia.chanceChuva}% chuva',
-                              style: t.legenda(cor: Cores.chuva)),
-                      ],
+              Text('Próximos dias', style: t.legenda()),
+              SizedBox(height: r.sp(12)),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final dia in d.proximosDias.take(4))
+                    Expanded(
+                      // scaleDown: em telas mais baixas o dia encolhe em vez de cortar.
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.topCenter,
+                        child: Column(
+                          children: [
+                            Text(diaSemanaCurto(dia.dia),
+                                style: t.corpo(peso: FontWeight.w700)),
+                            IconeClima(
+                                codigo: dia.codigo,
+                                tamanho: r.icon(88),
+                                animar: false),
+                            // Máxima forte, mínima apagada: lê-se de longe.
+                            Text.rich(TextSpan(children: [
+                              TextSpan(
+                                  text: '${dia.max}°  ', style: t.subtitulo()),
+                              TextSpan(
+                                  text: '${dia.min}°',
+                                  style: t.subtitulo(cor: Cores.textoApagado)),
+                            ])),
+                            if (dia.chanceChuva >= 20)
+                              Text('${dia.chanceChuva}% chuva',
+                                  style: t.legenda(cor: Cores.chuva)),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ),
+                ],
+              ),
             ],
           ),
         ),

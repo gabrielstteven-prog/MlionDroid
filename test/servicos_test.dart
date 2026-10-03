@@ -64,6 +64,17 @@ void main() {
   });
 
   group('TV — onde assistir', () {
+    test('página do time traz o próximo jogo com canais', () {
+      final caminho = TvService.caminhoDoTime(
+          _fixture('futebolnatv_times.html'), ['Palmeiras', 'SE Palmeiras']);
+      expect(caminho, '/time/palmeiras-va41lxp2r4');
+      final jogos = TvService.parsePagina(_fixture('futebolnatv_time.html'));
+      final j = TvService.encontrarJogo(
+          jogos.reversed.toList(), ['Palmeiras'], ['Bahia']);
+      expect(j, isNotNull);
+      expect(j!.canais, containsAll(['GLOBO', 'PREMIERE 2']));
+    });
+
     test('lê a página real de jogos de hoje', () {
       final jogos = TvService.parsePagina(_fixture('futebolnatv_hoje.html'));
       expect(jogos, isNotEmpty);
@@ -179,17 +190,42 @@ void main() {
     });
 
   group('INMET', () {
-    test('aviso oficial sem colchetes e com nível certo', () {
+    test('vários alertas viram um só: o mais grave, do início ao fim', () {
+      final a = AvisosService.consolidarInmet([
+        {'descricao': 'Acumulado de Chuva', 'severidade': 'Perigo Potencial',
+          'inicio': '2026-10-04 00:00:00', 'fim': '2026-10-04 23:59:00'},
+        {'descricao': 'Tempestade', 'severidade': 'Perigo',
+          'inicio': '2026-10-04 00:01:00', 'fim': '2026-10-06 23:59:00'},
+        {'descricao': 'Tempestade', 'severidade': 'Perigo Potencial',
+          'inicio': '2026-10-04 00:02:00', 'fim': '2026-10-05 12:00:00'},
+        {'descricao': 'Baixa Umidade', 'severidade': 'Perigo',
+          'inicio': '2026-10-01 10:00:00', 'fim': '2026-10-02 18:00:00'}, // vencido
+      ], DateTime(2026, 10, 3, 20));
+      expect(a!.titulo, 'Defesa Civil: Tempestade');
+      expect(a.nivel, NivelAviso.perigo);
+      expect(a.detalhe, 'Alerta laranja a partir de amanhã, 0h');
+    });
+
+    test('sem alerta vigente, nada de Defesa Civil', () {
+      expect(
+          AvisosService.consolidarInmet([
+            {'descricao': 'Tempestade', 'severidade': 'Perigo',
+              'inicio': '2026-10-01 00:00:00', 'fim': '2026-10-02 00:00:00'},
+          ], DateTime(2026, 10, 3, 20)),
+          isNull);
+    });
+
+    test('aviso oficial curto, com cor e prazo', () {
       final a = AvisosService.avisoInmet({
         'descricao': 'Tempestade',
         'severidade': 'Perigo',
         'riscos': '[Chuva entre 30 e 60 mm/h, ventos intensos. Queda de árvores.]',
+        'inicio': '2026-10-03 10:00:00',
         'fim': '2026-10-06 23:59:00',
-      });
+      }, DateTime(2026, 10, 3, 15));
       expect(a.titulo, 'Defesa Civil: Tempestade');
       expect(a.nivel, NivelAviso.perigo);
-      expect(a.detalhe, isNot(contains('[')));
-      expect(a.detalhe, endsWith('Chuva entre 30 e 60 mm/h, ventos intensos'));
+      expect(a.detalhe, 'Alerta laranja até terça, 23h59');
     });
   });
 }

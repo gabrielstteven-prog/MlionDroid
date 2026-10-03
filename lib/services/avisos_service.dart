@@ -55,7 +55,7 @@ class AvisosService {
     final tempestade = proximas.where((h) => h.codigo >= 95).toList();
     if (tempestade.isNotEmpty) {
       avisos.add(Aviso('Tempestade às ${tempestade.first.hora.hour}h',
-          'Raios e rajadas de vento. Evite áreas abertas e árvores.',
+          'Raios e vento forte',
           NivelAviso.perigo, Icons.thunderstorm_rounded, 'Previsão'));
     }
 
@@ -71,7 +71,7 @@ class AvisosService {
       avisos.add(Aviso(
           forte ? 'Chuva forte às $quando' : 'Chuva às $quando',
           forte
-              ? 'Até ${hoje!.chuvaMm.round()} mm no dia, risco de alagamentos.'
+              ? 'Até ${hoje!.chuvaMm.round()} mm, risco de alagamento'
               : 'Até ${chuva.maxima}% de chance',
           forte ? NivelAviso.perigo : NivelAviso.atencao,
           Icons.umbrella_rounded,
@@ -86,7 +86,7 @@ class AvisosService {
             ? 'hoje'
             : diaSemanaLongo(maisQuente.dia).toLowerCase();
         avisos.add(Aviso('Calor forte: ${maisQuente.max}° $quando',
-            'Beba água e evite o sol entre 10h e 16h.',
+            'Evite o sol das 10h às 16h',
             maisQuente.max >= 36 ? NivelAviso.perigo : NivelAviso.atencao,
             Icons.local_fire_department_rounded, 'Previsão'));
       }
@@ -106,8 +106,8 @@ class AvisosService {
         avisos.add(Aviso(
             'Umidade baixa: $u% $quando',
             u < 12
-                ? 'Emergência: evite atividades ao ar livre e hidrate-se.'
-                : 'Beba água e umidifique os ambientes.',
+                ? 'Emergência: evite sair e beba água'
+                : 'Beba água e umidifique a casa',
             u < 12
                 ? NivelAviso.grandePerigo
                 : (u < 20 ? NivelAviso.perigo : NivelAviso.atencao),
@@ -119,7 +119,7 @@ class AvisosService {
     // Vento forte.
     if (hoje != null && hoje.rajadaMax >= 60) {
       avisos.add(Aviso('Rajadas de ${hoje.rajadaMax} km/h hoje',
-          'Recolha objetos soltos na varanda e no quintal.',
+          'Recolha objetos soltos',
           hoje.rajadaMax >= 80 ? NivelAviso.perigo : NivelAviso.atencao,
           Icons.air_rounded, 'Previsão'));
     }
@@ -128,7 +128,7 @@ class AvisosService {
     if (c.proximosDias.isNotEmpty) {
       final amanha = c.proximosDias.first;
       if (amanha.min <= 8) {
-        avisos.add(Aviso('Frio: ${amanha.min}° amanhã cedo', 'Agasalhe-se e proteja os pets.',
+        avisos.add(Aviso('Frio: ${amanha.min}° amanhã cedo', 'Agasalhe-se e proteja os pets',
             amanha.min <= 3 ? NivelAviso.perigo : NivelAviso.atencao,
             Icons.ac_unit_rounded, 'Previsão'));
       }
@@ -152,13 +152,44 @@ class AvisosService {
             jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>, ibge);
       },
     );
-    final lista = <Aviso>[];
-    for (final m in (entrada?.dados ?? []).cast<Map<String, dynamic>>()) {
-      final fim = DateTime.tryParse('${m['fim']}'.replaceFirst(' ', 'T'));
-      if (fim != null && fim.isBefore(agora)) continue;
-      lista.add(avisoInmet(m));
+    final unico = consolidarInmet(
+        (entrada?.dados ?? []).cast<Map<String, dynamic>>(), agora);
+    return [if (unico != null) unico];
+  }
+
+  /// O INMET publica vários avisos em sequência para a mesma região (0h,
+  /// 0h01, 0h02…, um por tipo de risco). Na tela vira UM aviso só: o tipo e a
+  /// cor do mais grave, o horário de início mais cedo e o fim mais tarde.
+  /// Função pura — testada.
+  static Aviso? consolidarInmet(List<Map<String, dynamic>> avisos, DateTime agora) {
+    DateTime? data(Object? v) => DateTime.tryParse('$v'.replaceFirst(' ', 'T'));
+    int peso(Map<String, dynamic> m) {
+      final sev = '${m['severidade'] ?? ''}'.toLowerCase();
+      final base = sev.contains('grande') ? 30 : (sev == 'perigo' ? 20 : 10);
+      // No mesmo nível, tempestade fala mais alto que "acumulado de chuva".
+      return base + (normalizar('${m['descricao']}').contains('tempestade') ? 1 : 0);
     }
-    return lista;
+
+    final ativos = avisos.where((m) {
+      final fim = data(m['fim']);
+      return fim == null || fim.isAfter(agora);
+    }).toList();
+    if (ativos.isEmpty) return null;
+
+    final principal = ativos.reduce((a, b) => peso(b) > peso(a) ? b : a);
+    DateTime? inicio;
+    DateTime? fim;
+    for (final m in ativos) {
+      final i = data(m['inicio']);
+      final f = data(m['fim']);
+      if (i != null && (inicio == null || i.isBefore(inicio))) inicio = i;
+      if (f != null && (fim == null || f.isAfter(fim))) fim = f;
+    }
+    return avisoInmet({
+      ...principal,
+      'inicio': inicio?.toIso8601String(),
+      'fim': fim?.toIso8601String(),
+    }, agora);
   }
 
   /// Guarda só os avisos que incluem o município (pelo código IBGE), num
@@ -181,19 +212,33 @@ class AvisosService {
     return r;
   }
 
-  static Aviso avisoInmet(Map<String, dynamic> m) {
+  /// Aviso oficial em versão curta, para ler de longe:
+  /// "Defesa Civil: Tempestade" / "Alerta laranja até terça, 23h59".
+  static Aviso avisoInmet(Map<String, dynamic> m, [DateTime? agora]) {
+    final now = agora ?? DateTime.now();
     final sev = '${m['severidade'] ?? ''}'.toLowerCase();
     final nivel = sev.contains('grande')
         ? NivelAviso.grandePerigo
         : sev == 'perigo'
             ? NivelAviso.perigo
             : NivelAviso.atencao;
+    // Cores oficiais do INMET para cada nível.
+    final cor = switch (nivel) {
+      NivelAviso.grandePerigo => 'vermelho',
+      NivelAviso.perigo => 'laranja',
+      _ => 'amarelo',
+    };
     final descricao = '${m['descricao'] ?? 'Aviso meteorológico'}';
+    final inicio = DateTime.tryParse('${m['inicio']}'.replaceFirst(' ', 'T'));
     final fim = DateTime.tryParse('${m['fim']}'.replaceFirst(' ', 'T'));
-    // O INMET às vezes manda os riscos como lista ("[Chuva entre ...]").
-    final riscos = '${m['riscos'] ?? ''}'.replaceAll(RegExp(r'[\[\]"]'), '');
-    final resumo = riscos.split('.').first.trim();
-    final ate = fim != null ? 'Até ${diaSemanaCurto(fim).toLowerCase()} ${horaMinuto(fim)}. ' : '';
+    final String quando;
+    if (inicio != null && inicio.isAfter(now)) {
+      quando = ' a partir de ${quandoCurto(inicio, now)}';
+    } else if (fim != null) {
+      quando = ' até ${quandoCurto(fim, now)}';
+    } else {
+      quando = '';
+    }
     final d = normalizar(descricao);
     final icone = d.contains('tempestade')
         ? Icons.thunderstorm_rounded
@@ -203,10 +248,19 @@ class AvisosService {
                 ? Icons.water_drop_outlined
                 : d.contains('calor') || d.contains('temperatura')
                     ? Icons.local_fire_department_rounded
-                    : d.contains('vento')
+                    : d.contains('vento') || d.contains('vendaval')
                         ? Icons.air_rounded
                         : Icons.warning_amber_rounded;
-    return Aviso('Defesa Civil: $descricao', '$ate$resumo', nivel, icone, 'INMET');
+    return Aviso('Defesa Civil: $descricao', 'Alerta $cor$quando', nivel, icone, 'INMET');
+  }
+
+  /// "23h59", "amanhã, 6h" ou "terça, 23h59".
+  static String quandoCurto(DateTime d, DateTime agora) {
+    final hora = d.minute == 0 ? '${d.hour}h' : '${d.hour}h${doisDigitos(d.minute)}';
+    final dias = soData(d).difference(soData(agora)).inDays;
+    if (dias == 0) return hora;
+    if (dias == 1) return 'amanhã, $hora';
+    return '${diaSemanaLongo(d).split('-').first.toLowerCase()}, $hora';
   }
 
   /// Código IBGE da cidade configurada (resolvido uma vez e guardado).
