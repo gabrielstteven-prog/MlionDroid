@@ -84,7 +84,7 @@ class _TelaNoticiasState extends State<TelaNoticias> {
     final r = await widget.carregar();
     if (!mounted) return;
     setState(() {
-      _noticias = r.noticias;
+      _noticias = NewsService.semFotosRepetidas(r.noticias);
       _atualizadoEm = r.atualizadoEm;
       _carregando = false;
     });
@@ -206,6 +206,28 @@ class _TelaNoticiasState extends State<TelaNoticias> {
     );
   }
 
+  /// Capa para notícia sem foto (ou com foto repetida): degradê na cor da
+  /// seção com a marca da tela (escudo, bandeira) ou o ícone dela.
+  Widget _capa(Color cor, R r) => DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color.lerp(cor, Colors.black, 0.25)!,
+              Color.lerp(cor, Colors.black, 0.7)!,
+            ],
+          ),
+        ),
+        child: Center(
+          child: Opacity(
+            opacity: 0.9,
+            child: widget.marca ??
+                Icon(widget.icone, color: Cores.texto, size: r.icon(56)),
+          ),
+        ),
+      );
+
   Widget _buildItem(Noticia n, R r) {
     final t = Tipo(r);
     final cor = widget.corDoRotulo?.call(n) ?? widget.destaque;
@@ -222,19 +244,13 @@ class _TelaNoticiasState extends State<TelaNoticias> {
               width: largura,
               height: largura * 0.62,
               child: n.imagem.isEmpty
-                  ? ColoredBox(
-                      color: Cores.superficie,
-                      child: Icon(widget.icone, color: Cores.textoApagado, size: r.icon(40)),
-                    )
+                  ? _capa(cor, r)
                   : CachedNetworkImage(
                       imageUrl: n.imagem,
                       fit: BoxFit.cover,
                       memCacheWidth: 600,
                       placeholder: (_, __) => ColoredBox(color: Cores.superficie),
-                      errorWidget: (_, __, ___) => ColoredBox(
-                        color: Cores.superficie,
-                        child: Icon(widget.icone, color: Cores.textoApagado, size: r.icon(40)),
-                      ),
+                      errorWidget: (_, __, ___) => _capa(cor, r),
                     ),
             ),
           ),

@@ -150,6 +150,33 @@ class NewsService {
     return (noticias: semDuplicadas(todas), atualizadoEm: maisAntigo);
   }
 
+  /// O ge e o G1 reaproveitam a mesma foto em matérias diferentes (ex.: a
+  /// foto de agência do jogador em três notícias seguidas) — parecia notícia
+  /// repetida. A primeira mantém a foto; as outras ficam sem (a tela desenha
+  /// uma capa própria). Compara pelo NOME do arquivo, porque o mesmo
+  /// arquivo vem em URLs de tamanhos diferentes. Função pura — testada.
+  static List<Noticia> semFotosRepetidas(List<Noticia> lista) {
+    final vistas = <String>{};
+    return [
+      for (final n in lista)
+        if (n.imagem.isEmpty || vistas.add(arquivoDaImagem(n.imagem)))
+          n
+        else
+          Noticia(
+              titulo: n.titulo,
+              descricao: n.descricao,
+              link: n.link,
+              imagem: '',
+              rotulo: n.rotulo,
+              publicadaEm: n.publicadaEm),
+    ];
+  }
+
+  static String arquivoDaImagem(String url) {
+    final caminho = Uri.tryParse(url)?.path ?? url;
+    return caminho.split('/').last.toLowerCase();
+  }
+
   /// O feed "Geral" do G1 repete manchetes das editorias — mantém a
   /// primeira ocorrência de cada link/título.
   static List<Noticia> semDuplicadas(List<Noticia> lista) {

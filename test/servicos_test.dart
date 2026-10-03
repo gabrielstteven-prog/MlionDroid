@@ -189,6 +189,21 @@ void main() {
     });
     });
 
+  group('Notícias', () {
+    test('foto repetida em outra matéria some (mesmo arquivo, outro tamanho)', () {
+      Noticia n(String t, String img) =>
+          Noticia(titulo: t, descricao: '', link: t, imagem: img);
+      final r = NewsService.semFotosRepetidas([
+        n('a', 'https://s2.glbimg.com/x=/600x400/i.s3/afp-flaco.jpg'),
+        n('b', 'https://s2.glbimg.com/y=/1080x608/i.s3/afp-flaco.jpg'),
+        n('c', 'https://s2.glbimg.com/z/outra.jpg'),
+        n('d', ''),
+      ]);
+      expect(r.map((e) => e.imagem.isNotEmpty), [true, false, true, false]);
+      expect(r[1].titulo, 'b');
+    });
+  });
+
   group('INMET', () {
     test('vários alertas viram um só: o mais grave, do início ao fim', () {
       final a = AvisosService.consolidarInmet([
