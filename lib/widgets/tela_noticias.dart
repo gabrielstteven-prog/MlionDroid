@@ -23,6 +23,7 @@ class TelaNoticias extends StatefulWidget {
   final String titulo;
   final String? subtitulo;
   final Color destaque;
+  final Widget? marca;
 
   /// Bloco opcional entre o título e a lista (ex.: resumo do time).
   final Widget? extra;
@@ -40,6 +41,7 @@ class TelaNoticias extends StatefulWidget {
     required this.destaque,
     this.subtitulo,
     this.extra,
+    this.marca,
     this.corDoRotulo,
     this.velocidadePxSeg = 35,
     this.pausaFinalSeg = 10,
@@ -152,6 +154,7 @@ class _TelaNoticiasState extends State<TelaNoticias> {
       onPointerDown: (_) => _ativarManual(),
       child: EstruturaTela(
         icone: widget.icone,
+        marca: widget.marca,
         titulo: widget.titulo,
         subtitulo: _aberta == null ? widget.subtitulo : _aberta!.titulo,
         destaque: widget.destaque,

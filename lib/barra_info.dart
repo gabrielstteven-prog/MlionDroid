@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'design/icones.dart';
 import 'design/tema.dart';
 import 'info_hub.dart';
 import 'performance_manager.dart';
 import 'responsive.dart';
 import 'services/assistente_service.dart';
 import 'services/football_service.dart';
-import 'services/weather_service.dart';
 import 'tela_spotify.dart' show SpotifyManager;
 import 'update_banner.dart';
 import 'update_manager.dart';
@@ -68,9 +68,11 @@ class BarraInfo extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: r.sp(32)),
               child: Row(
                 children: [
-                  const _Relogio(),
-                  SizedBox(width: r.sp(28)),
-                  const Expanded(child: _Clima()),
+                  // Relógio à esquerda, clima ao centro, ações à direita.
+                  const Expanded(
+                      child: Align(alignment: Alignment.centerLeft, child: _Relogio())),
+                  const _Clima(),
+                  const Expanded(child: SizedBox()),
                   ListenableBuilder(
                     listenable: UpdateManager.instance,
                     builder: (context, _) => UpdateManager.instance.disponivel
@@ -141,37 +143,45 @@ class _Clima extends StatelessWidget {
         final hub = InfoHub.instance;
         final c = hub.clima;
         if (c == null) {
-          return Align(
-            alignment: Alignment.centerLeft,
-            child: hub.climaCarregando
-                ? const SizedBox.shrink()
-                : Text('Sem dados de clima', style: t.apoio()),
-          );
+          return hub.climaCarregando
+              ? const SizedBox.shrink()
+              : Text('Sem dados de clima', style: t.apoio());
         }
-        final chuva = c.chuvaRestanteHoje();
+        final chuva = c.chuvaRestanteHoje().maxima;
         return FittedBox(
           fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(emojiClima(c.codigo, ehDia: c.ehDia),
-                  style: TextStyle(fontSize: r.fs(34))),
-              SizedBox(width: r.sp(12)),
-              Text('${c.temp}°', style: t.numero()),
-              SizedBox(width: r.sp(14)),
+              IconeClima(codigo: c.codigo, ehDia: c.ehDia, tamanho: r.icon(72)),
+              SizedBox(width: r.sp(8)),
+              Text('${c.temp}°', style: t.numero().copyWith(fontSize: r.fs(64))),
+              SizedBox(width: r.sp(16)),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(hub.cidadeLabel, style: t.corpo(peso: FontWeight.w600)),
-                  Text(
-                    chuva.maxima >= 30
-                        ? 'Sensação ${c.sensacao}°, chuva ${chuva.maxima}%'
-                        : 'Sensação ${c.sensacao}°, ${descricaoClima(c.codigo).toLowerCase()}',
-                    style: t.apoio(cor: chuva.maxima >= 30 ? Cores.chuva : Cores.textoSecundario),
-                  ),
+                  Text(hub.cidadeLabel, style: t.corpo(peso: FontWeight.w700)),
+                  Text('Sensação de ${c.sensacao}°', style: t.apoio()),
                 ],
               ),
+              if (chuva >= 30) ...[
+                SizedBox(width: r.sp(20)),
+                // Chuva vira um destaque próprio, visível de longe.
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: r.sp(16), vertical: r.sp(10)),
+                  decoration: BoxDecoration(
+                    color: Cores.chuva.withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(r.sp(30)),
+                    border: Border.all(color: Cores.chuva.withValues(alpha: 0.55)),
+                  ),
+                  child: Row(children: [
+                    Icon(Icons.umbrella_rounded, color: Cores.chuva, size: r.icon(26)),
+                    SizedBox(width: r.sp(8)),
+                    Text('$chuva%', style: t.subtitulo(cor: Cores.texto)),
+                  ]),
+                ),
+              ],
             ],
           ),
         );
@@ -521,7 +531,13 @@ class MlionShell extends StatelessWidget {
     return ValueListenableBuilder<DateTime>(
       valueListenable: InfoHub.instance.relogio,
       builder: (context, agora, conteudo) =>
-          CeuDeFundo(agora: agora, child: conteudo!),
+          CeuDeFundo(
+        agora: agora,
+        // Material transparente: dá a todos os textos um estilo base. Sem
+        // ele o Flutter desenhava o sublinhado amarelo de aviso (o
+        // "tracinho" que aparecia embaixo do ícone do clima).
+        child: Material(type: MaterialType.transparency, child: conteudo!),
+      ),
       child: mostrarBarra
           ? Column(
               children: [

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'config_manager.dart';
+import 'design/icones.dart';
 import 'design/tema.dart';
+import 'responsive.dart';
 import 'services/news_service.dart';
 import 'widgets/tela_noticias.dart';
 
@@ -56,6 +58,7 @@ class TelaBrasil extends StatelessWidget {
     return TelaNoticias(
       aoTerminar: aoTerminar,
       icone: Icons.public_rounded,
+      marca: BandeiraBrasil(tamanho: R(context).sp(54)),
       titulo: 'Notícias do Brasil',
       subtitulo: [for (final k in selecionadas) categoriasBrasil[k]!.nome].join(', '),
       destaque: Destaques.brasil,

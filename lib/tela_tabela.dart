@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 
 import 'cache_manager.dart';
 import 'config_manager.dart';
+import 'design/icones.dart';
 import 'design/tema.dart';
 import 'responsive.dart';
 import 'services/football_service.dart';
 import 'services/tv_service.dart';
+import 'tela_palmeiras.dart' show EscudoTime;
 import 'times.dart';
 import 'util.dart';
 
@@ -114,6 +116,7 @@ class _TelaTabelaState extends State<TelaTabela> {
     final jogo = _jogo;
     return EstruturaTela(
       icone: jogo?.aoVivo == true ? Icons.sensors_rounded : Icons.stadium_rounded,
+      marca: EscudoTime(time: _time, tamanho: R(context).sp(56)),
       titulo: jogo == null
           ? 'Próxima partida'
           : jogo.aoVivo
@@ -156,11 +159,15 @@ class _TelaTabelaState extends State<TelaTabela> {
   // ── Confronto: escudos e o número principal (hora ou placar) ─────────────
   Widget _confronto(R r, Partida jogo) {
     final t = Tipo(r);
+    final logo = LogoCompeticao(
+        slug: jogo.ligaSlug, logoId: jogo.ligaLogoId, tamanho: r.sp(84));
     final Widget centro;
     if (jogo.aoVivo || jogo.encerrada) {
       centro = Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          logo,
+          SizedBox(height: r.sp(10)),
           Text('${jogo.mandante.gols ?? 0} – ${jogo.visitante.gols ?? 0}', style: t.heroi()),
           SizedBox(height: r.sp(8)),
           Selo(jogo.aoVivo ? 'Ao vivo, ${jogo.relogio}' : 'Encerrado',
@@ -176,6 +183,8 @@ class _TelaTabelaState extends State<TelaTabela> {
       centro = Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          logo,
+          SizedBox(height: r.sp(10)),
           Text(horaMinuto(jogo.data), style: t.heroi()),
           SizedBox(height: r.sp(4)),
           Text(quando, style: t.subtitulo(cor: _cor)),
@@ -361,7 +370,7 @@ class _TelaTabelaState extends State<TelaTabela> {
                 Padding(
                   padding: EdgeInsets.only(bottom: r.sp(6)),
                   child: Text(
-                    '${p.data.day}/${p.data.month}  ${p.mandanteEh(id) ? 'x' : '@'} ${p.adversarioDe(id).nome}, ${p.competicao}',
+                    '${p.data.day}/${p.data.month}  ${p.mandante.nome} x ${p.visitante.nome}, ${p.competicao}',
                     style: t.apoio(cor: Cores.texto),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

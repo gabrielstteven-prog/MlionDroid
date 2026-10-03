@@ -12,6 +12,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import 'config_manager.dart';
 import 'info_hub.dart';
+import 'design/icones.dart';
 import 'design/tema.dart';
 import 'responsive.dart';
 import 'services/musica_service.dart';
@@ -778,7 +779,7 @@ class _TelaSpotifyState extends State<TelaSpotify> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Row(children: [
-                  Icon(Icons.music_note_rounded, color: Destaques.musica, size: r.icon(22)),
+                  IconeSpotify(tamanho: r.icon(30)),
                   SizedBox(width: r.sp(8)),
                   Text(track.tocando ? 'Tocando no Spotify' : 'Pausado', style: t.apoio()),
                 ]),

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'cache_manager.dart';
 import 'config_manager.dart';
+import 'design/icones.dart';
 import 'design/tema.dart';
 import 'responsive.dart';
 import 'services/football_service.dart';
@@ -66,7 +67,7 @@ class _TelaClassificacaoState extends State<TelaClassificacao> {
 
     setState(() {
       if (bra != null && bra.valor.isNotEmpty) {
-        _paginas.add(_Pagina('BRASILEIRÃO', bra.valor, true));
+        _paginas.add(_Pagina('Brasileirão', bra.valor, true));
         _atualizadoEm = bra.atualizadoEm;
       }
       if (lib != null && lib.valor.isNotEmpty) {
@@ -76,7 +77,7 @@ class _TelaClassificacaoState extends State<TelaClassificacao> {
             final bTem = b.linhas.any((l) => l.timeId == _timeId) ? 0 : 1;
             return aTem.compareTo(bTem);
           });
-        _paginas.add(_Pagina('LIBERTADORES', grupos, false));
+        _paginas.add(_Pagina('Libertadores', grupos, false));
       }
       _carregando = false;
     });
@@ -113,6 +114,12 @@ class _TelaClassificacaoState extends State<TelaClassificacao> {
     final p = _paginas.isNotEmpty ? _paginas[_pagina] : null;
     return EstruturaTela(
       icone: Icons.leaderboard_rounded,
+      marca: p == null
+          ? null
+          : LogoCompeticao(
+              slug: p.titulo == 'Libertadores' ? 'conmebol.libertadores' : 'bra.1',
+              logoId: '',
+              tamanho: r.sp(56)),
       titulo: p?.titulo ?? 'Classificação',
       subtitulo: _paginas.length > 1
           ? 'Classificação, tabela ${_pagina + 1} de ${_paginas.length}'

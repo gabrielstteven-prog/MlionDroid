@@ -67,3 +67,6 @@ app.*.map.json
 /backup_antes_auditoria/
 /android/keystore/
 /android/key.properties
+/tool/previa_visual_test.dart
+/tool/previa/
+/android/.kotlin/

@@ -22,8 +22,8 @@ import '../times.dart';
 /// Cores de texto e sinais (iguais em todas as telas).
 class Cores {
   static const texto = Color(0xFFF4F6FA);
-  static const textoSecundario = Color(0xFFB9C3D4);
-  static const textoApagado = Color(0xFF7F8BA2);
+  static const textoSecundario = Color(0xFFDCE4EF); // legível do sofá
+  static const textoApagado = Color(0xFFADBACD);
 
   static const positivo = Color(0xFF6FD6A0);
   static const aviso = Color(0xFFFFB86B);
@@ -31,9 +31,9 @@ class Cores {
   static const chuva = Color(0xFF7CC6FF);
 
   /// Superfícies: o céu aparece através delas.
-  static Color superficie = Colors.white.withValues(alpha: 0.07);
-  static Color superficieElevada = Colors.white.withValues(alpha: 0.11);
-  static Color contorno = Colors.white.withValues(alpha: 0.10);
+  static Color superficie = Colors.white.withValues(alpha: 0.09);
+  static Color superficieElevada = Colors.white.withValues(alpha: 0.14);
+  static Color contorno = Colors.white.withValues(alpha: 0.12);
 }
 
 /// Cor de destaque de cada tela.
@@ -76,24 +76,38 @@ Periodo periodoDaHora(int hora) {
   return Periodo.noite;
 }
 
-/// O céu de cada momento. Todos escuros o bastante para texto claro.
-List<Color> coresDoCeu(Periodo p) {
+/// O céu de cada momento: três tons (topo → base) e uma fonte de luz
+/// (sol, pôr do sol ou lua) que dá profundidade. Todos escuros o bastante
+/// para texto claro continuar legível de longe.
+class Ceu {
+  final List<Color> cores;
+  final Color luz;
+  final Alignment posicaoLuz;
+  const Ceu(this.cores, this.luz, this.posicaoLuz);
+}
+
+Ceu ceuDoPeriodo(Periodo p) {
   switch (p) {
     case Periodo.madrugada:
-      return const [Color(0xFF0A0F1E), Color(0xFF141C33)];
+      return const Ceu([Color(0xFF060A18), Color(0xFF0C1430), Color(0xFF151F42)],
+          Color(0x2E7C8CFF), Alignment(0.85, -0.95));
     case Periodo.manha:
-      return const [Color(0xFF1B3756), Color(0xFF35627F)];
+      return const Ceu([Color(0xFF0F2C52), Color(0xFF184A7E), Color(0xFF22639C)],
+          Color(0x55FFDFA0), Alignment(0.9, -1.05));
     case Periodo.tarde:
-      return const [Color(0xFF15404F), Color(0xFF285F63)];
+      return const Ceu([Color(0xFF0B2A50), Color(0xFF134781), Color(0xFF1C5F9C)],
+          Color(0x40FFF1C4), Alignment(0.55, -1.1));
     case Periodo.fimDeTarde:
-      return const [Color(0xFF2E2442), Color(0xFF6E3F4E)];
+      return const Ceu([Color(0xFF1E1A42), Color(0xFF4E2D5E), Color(0xFF8E4A55)],
+          Color(0x66FFA867), Alignment(0.95, -0.55));
     case Periodo.noite:
-      return const [Color(0xFF0E1628), Color(0xFF1B2843)];
+      return const Ceu([Color(0xFF080F2A), Color(0xFF111C46), Color(0xFF1A2858)],
+          Color(0x2896AEFF), Alignment(0.85, -0.95));
   }
 }
 
 /// Fundo comum do app. Desenhado UMA vez atrás da barra e de todas as
-/// telas; troca de cor suavemente quando muda o período do dia.
+/// telas (sem animação contínua); troca suavemente quando muda o período.
 class CeuDeFundo extends StatelessWidget {
   final DateTime agora;
   final Widget child;
@@ -101,17 +115,44 @@ class CeuDeFundo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cores = coresDoCeu(periodoDaHora(agora.hour));
+    final ceu = ceuDoPeriodo(periodoDaHora(agora.hour));
     return AnimatedContainer(
       duration: const Duration(seconds: 20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: cores,
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: ceu.cores,
         ),
       ),
-      child: child,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Fonte de luz
+          AnimatedContainer(
+            duration: const Duration(seconds: 20),
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: ceu.posicaoLuz,
+                radius: 1.1,
+                colors: [ceu.luz, ceu.luz.withValues(alpha: 0)],
+              ),
+            ),
+          ),
+          // Base levemente mais escura: ancora a tela e ajuda a leitura
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: [0.55, 1.0],
+                colors: [Color(0x00000000), Color(0x40000000)],
+              ),
+            ),
+          ),
+          child,
+        ],
+      ),
     );
   }
 }
@@ -123,15 +164,26 @@ class Tipo {
   Tipo(this.r);
   factory Tipo.de(BuildContext context) => Tipo(R(context));
 
-  TextStyle _display(double size, FontWeight w, Color c, double h) =>
-      GoogleFonts.bricolageGrotesque(
-          fontSize: r.fs(size), fontWeight: w, color: c, height: h,
-          decoration: TextDecoration.none);
+  /// Só para prévias renderizadas no PC (sem internet): usa fontes
+  /// carregadas localmente em vez do Google Fonts.
+  static String? familiaDisplayLocal;
+  static String? familiaTextoLocal;
 
-  TextStyle _texto(double size, FontWeight w, Color c, double h) =>
-      GoogleFonts.figtree(
-          fontSize: r.fs(size), fontWeight: w, color: c, height: h,
-          decoration: TextDecoration.none);
+  static TextStyle display(TextStyle s) => familiaDisplayLocal != null
+      ? s.copyWith(fontFamily: familiaDisplayLocal)
+      : GoogleFonts.bricolageGrotesque(textStyle: s);
+
+  static TextStyle texto(TextStyle s) => familiaTextoLocal != null
+      ? s.copyWith(fontFamily: familiaTextoLocal)
+      : GoogleFonts.figtree(textStyle: s);
+
+  TextStyle _display(double size, FontWeight w, Color c, double h) => display(TextStyle(
+      fontSize: r.fs(size), fontWeight: w, color: c, height: h,
+      decoration: TextDecoration.none));
+
+  TextStyle _texto(double size, FontWeight w, Color c, double h) => texto(TextStyle(
+      fontSize: r.fs(size), fontWeight: w, color: c, height: h,
+      decoration: TextDecoration.none));
 
   /// Número protagonista (temperatura, placar, relógio grande).
   TextStyle heroi({Color cor = Cores.texto}) =>
@@ -141,19 +193,21 @@ class Tipo {
   TextStyle titulo({Color cor = Cores.texto}) =>
       _display(34, FontWeight.w600, cor, 1.1);
   TextStyle subtitulo({Color cor = Cores.texto}) =>
-      _display(24, FontWeight.w600, cor, 1.2);
+      _display(27, FontWeight.w600, cor, 1.2);
   TextStyle corpo({Color cor = Cores.texto, FontWeight peso = FontWeight.w500}) =>
-      _texto(20, peso, cor, 1.35);
+      _texto(22, peso, cor, 1.35);
   TextStyle apoio({Color cor = Cores.textoSecundario, FontWeight peso = FontWeight.w500}) =>
-      _texto(16, peso, cor, 1.35);
+      _texto(19, peso, cor, 1.35);
   TextStyle legenda({Color cor = Cores.textoApagado}) =>
-      _texto(14, FontWeight.w500, cor, 1.3);
+      _texto(16, FontWeight.w600, cor, 1.3);
 }
 
 /// Esqueleto comum de todas as telas: título com ícone à esquerda,
 /// informação de atualização à direita e o conteúdo abaixo.
 class EstruturaTela extends StatelessWidget {
   final IconData icone;
+  /// Ícone "de verdade" (bandeira, escudo, logo...). Substitui [icone].
+  final Widget? marca;
   final String titulo;
   final String? subtitulo;
   final Color destaque;
@@ -169,6 +223,7 @@ class EstruturaTela extends StatelessWidget {
     required this.destaque,
     required this.child,
     this.subtitulo,
+    this.marca,
     this.rodapeDireita,
     this.acaoDireita,
     this.margem,
@@ -187,14 +242,18 @@ class EstruturaTela extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Container(
-                width: r.sp(48),
-                height: r.sp(48),
-                decoration: BoxDecoration(
-                  color: destaque.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(r.sp(14)),
-                ),
-                child: Icon(icone, color: destaque, size: r.icon(26)),
+              SizedBox(
+                width: r.sp(56),
+                height: r.sp(56),
+                child: marca != null
+                    ? Center(child: marca)
+                    : DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: destaque.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(r.sp(16)),
+                        ),
+                        child: Icon(icone, color: destaque, size: r.icon(30)),
+                      ),
               ),
               SizedBox(width: r.sp(16)),
               Expanded(

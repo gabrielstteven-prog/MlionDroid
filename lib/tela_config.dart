@@ -2387,6 +2387,7 @@ class _TelaConfigState extends State<TelaConfig>
       }
       setState(() {
         config.set('clima', 'cidade', cidade);
+        config.set('clima', 'ibge', ''); // avisos da Defesa Civil: recalcula
         config.set('clima', 'estado', uf);
         config.set('clima', 'lat', coords['lat'].toString());
         config.set('clima', 'lon', coords['lon'].toString());

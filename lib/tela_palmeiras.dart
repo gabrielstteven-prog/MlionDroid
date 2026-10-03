@@ -60,6 +60,7 @@ class _TelaPalmeirasState extends State<TelaPalmeiras> {
     return TelaNoticias(
       aoTerminar: widget.aoTerminar,
       icone: Icons.sports_soccer_rounded,
+      marca: EscudoTime(time: time, tamanho: R(context).sp(56)),
       titulo: time.nome,
       subtitulo: 'Notícias do ge',
       destaque: _cor,
@@ -111,8 +112,6 @@ class _TelaPalmeirasState extends State<TelaPalmeiras> {
       padding: EdgeInsets.symmetric(horizontal: r.sp(24), vertical: r.sp(16)),
       child: Row(
         children: [
-          EscudoTime(time: _time, tamanho: r.sp(64)),
-          SizedBox(width: r.sp(24)),
           bloco('Brasileirão', l == null ? '—' : '${l.posicao}º lugar',
               l == null ? 'Sem dados agora' : '${l.pontos} pontos em ${l.jogos} jogos'),
           divisor,
@@ -129,7 +128,7 @@ class _TelaPalmeirasState extends State<TelaPalmeiras> {
           divisor,
           bloco(
             'Próximo jogo',
-            p == null ? '—' : '${p.mandanteEh(id) ? 'x' : '@'} ${p.adversarioDe(id).nome}',
+            p == null ? '—' : '${p.mandante.nome} x ${p.visitante.nome}',
             p == null
                 ? ''
                 : p.aoVivo

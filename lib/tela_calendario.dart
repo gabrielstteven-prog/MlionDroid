@@ -9,6 +9,7 @@ import 'package:table_calendar/table_calendar.dart';
 
 import 'cache_manager.dart';
 import 'config_manager.dart';
+import 'design/icones.dart';
 import 'design/tema.dart';
 import 'responsive.dart';
 import 'services/google_auth_service.dart';
@@ -408,6 +409,7 @@ class _TelaCalendarioState extends State<TelaCalendario>
     final r = R(context);
     return EstruturaTela(
       icone: Icons.calendar_month_rounded,
+      marca: IconeGoogleAgenda(tamanho: r.sp(52), dia: _hoje.day),
       titulo: 'Agenda',
       subtitulo: DateFormat("EEEE, d 'de' MMMM", 'pt_BR').format(_hoje),
       destaque: _corEvento,

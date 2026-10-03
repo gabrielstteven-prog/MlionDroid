@@ -14,7 +14,11 @@ class PrevisaoDia {
   final int min;
   final int chanceChuva;
   final int codigo;
-  const PrevisaoDia(this.dia, this.max, this.min, this.chanceChuva, this.codigo);
+  final int umidadeMin; // % (0 = desconhecida)
+  final int rajadaMax; // km/h
+  final double chuvaMm;
+  const PrevisaoDia(this.dia, this.max, this.min, this.chanceChuva, this.codigo,
+      {this.umidadeMin = 0, this.rajadaMax = 0, this.chuvaMm = 0});
 }
 
 /// Dados de clima já interpretados. Construído a partir do JSON bruto do
@@ -27,6 +31,8 @@ class DadosClima {
   final List<PrevisaoDia> dias; // dias[0] = hoje
   final List<DateTime> horas;
   final List<int> chuvaPorHora;
+  final List<int> tempPorHora;
+  final List<int> codigoPorHora;
   final DateTime atualizadoEm;
 
   const DadosClima({
@@ -37,11 +43,30 @@ class DadosClima {
     required this.dias,
     required this.horas,
     required this.chuvaPorHora,
+    this.tempPorHora = const [],
+    this.codigoPorHora = const [],
     required this.atualizadoEm,
   });
 
   PrevisaoDia? get hoje => dias.isNotEmpty ? dias.first : null;
   List<PrevisaoDia> get proximosDias => dias.length > 1 ? dias.sublist(1) : [];
+
+  /// Próximas [n] horas a partir de agora (hora, temperatura, código, chuva).
+  List<({DateTime hora, int temp, int codigo, int chuva})> proximasHoras(int n,
+      [DateTime? agora]) {
+    final now = agora ?? DateTime.now();
+    final r = <({DateTime hora, int temp, int codigo, int chuva})>[];
+    for (var i = 0; i < horas.length && r.length < n; i++) {
+      if (!horas[i].isAfter(now.subtract(const Duration(minutes: 30)))) continue;
+      r.add((
+        hora: horas[i],
+        temp: i < tempPorHora.length ? tempPorHora[i] : 0,
+        codigo: i < codigoPorHora.length ? codigoPorHora[i] : 0,
+        chuva: i < chuvaPorHora.length ? chuvaPorHora[i] : 0,
+      ));
+    }
+    return tempPorHora.isEmpty ? [] : r;
+  }
 
   /// Maior chance de chuva no resto do dia e os horários com chance ≥ 30%.
   /// Calculado na hora de exibir (não no momento da busca), para não ficar
@@ -79,6 +104,9 @@ class DadosClima {
         _int(l('temperature_2m_min').elementAtOrNull(i)),
         _int(l('precipitation_probability_max').elementAtOrNull(i)),
         _int(l('weather_code').elementAtOrNull(i)),
+        umidadeMin: _int(l('relative_humidity_2m_min').elementAtOrNull(i)),
+        rajadaMax: _int(l('wind_gusts_10m_max').elementAtOrNull(i)),
+        chuvaMm: (l('precipitation_sum').elementAtOrNull(i) as num?)?.toDouble() ?? 0,
       ));
     }
 
@@ -94,6 +122,8 @@ class DadosClima {
       chuvaPorHora: ((hourly['precipitation_probability'] as List?) ?? [])
           .map((p) => _int(p))
           .toList(),
+      tempPorHora: ((hourly['temperature_2m'] as List?) ?? []).map((p) => _int(p)).toList(),
+      codigoPorHora: ((hourly['weather_code'] as List?) ?? []).map((p) => _int(p)).toList(),
       atualizadoEm: atualizadoEm,
     );
   }
@@ -111,9 +141,16 @@ class WeatherService extends ChangeNotifier {
 
   DadosClima? get atual => _atual;
 
+  /// Só para prévias e testes: define o clima sem ir à internet.
+  @visibleForTesting
+  void definirParaPrevia(DadosClima dados) {
+    _atual = dados;
+    notifyListeners();
+  }
+
   String get _lat => _cfg.getString('clima', 'lat', '-22.889');
   String get _lon => _cfg.getString('clima', 'lon', '-47.222');
-  String get _chave => 'clima_${_lat}_$_lon';
+  String get _chave => 'clima_v3_${_lat}_$_lon';
 
   /// Retorna o clima, buscando na internet só se o dado tiver mais que
   /// [maxIdade]. Sem internet, devolve o último dado conhecido.
@@ -141,8 +178,9 @@ class WeatherService extends ChangeNotifier {
         final url = Uri.parse('https://api.open-meteo.com/v1/forecast'
             '?latitude=$_lat&longitude=$_lon'
             '&current=temperature_2m,apparent_temperature,weather_code,is_day'
-            '&hourly=precipitation_probability'
-            '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max'
+            '&hourly=precipitation_probability,temperature_2m,weather_code'
+            '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,'
+            'relative_humidity_2m_min,wind_gusts_10m_max,precipitation_sum'
             '&forecast_days=6'
             '&timezone=America%2FSao_Paulo');
         final res = await http.get(url).timeout(const Duration(seconds: 12));

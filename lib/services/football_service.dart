@@ -34,6 +34,8 @@ class Partida {
   final String id;
   final DateTime data; // horário local
   final String competicao;
+  final String ligaSlug; // ex.: bra.1 — escolhe o logo da competição
+  final String ligaLogoId; // id do logo na ESPN (alternateId da liga)
   final TimePartida mandante;
   final TimePartida visitante;
   final String estadio;
@@ -48,6 +50,8 @@ class Partida {
     required this.id,
     required this.data,
     required this.competicao,
+    this.ligaSlug = '',
+    this.ligaLogoId = '',
     required this.mandante,
     required this.visitante,
     required this.estadio,
@@ -134,6 +138,8 @@ class Partida {
       data: data.toLocal(),
       competicao: traduzirCompeticao(
           liga?['name'] as String? ?? liga?['abbreviation'] as String? ?? ''),
+      ligaSlug: liga?['slug'] as String? ?? '',
+      ligaLogoId: '${liga?['alternateId'] ?? ''}',
       mandante: _time(casa),
       visitante: _time(fora),
       estadio: venue['fullName'] as String? ?? '',
