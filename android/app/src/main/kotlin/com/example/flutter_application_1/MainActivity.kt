@@ -18,7 +18,13 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.graphics.Color
 import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import android.widget.FrameLayout
 import android.view.WindowManager
 import java.util.Locale
 import io.flutter.embedding.android.FlutterActivity
@@ -45,7 +51,7 @@ class MainActivity : FlutterActivity() {
     // Tela em descanso (luz de fundo desligada): qualquer toque acende, e o
     // toque não "vaza" para o botão que estiver embaixo do dedo.
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (window.attributes.screenBrightness == WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF) {
+        if (cortina != null) {
             if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
                 DescansoService.parar(this)
                 acordarTela()
@@ -337,12 +343,34 @@ class MainActivity : FlutterActivity() {
     // Descanso SEM bloquear o tablet: o app continua na frente, a tela fica
     // preta e a luz de fundo é desligada. Antes usava o bloqueio do Android
     // (lockNow), que deixava o tablet na tela de senha.
+    private var cortina: View? = null
+
     private fun desligarTela(): Boolean {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val attrs = window.attributes
+        // Alguns tablets ignoram o "desligar" e só vão ao brilho mínimo; por
+        // isso, além do brilho, uma cortina preta cobre o app inteiro.
         attrs.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF
         window.attributes = attrs
+        if (cortina == null) {
+            val v = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+            addContentView(v, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            cortina = v
+        }
+        esconderBarras(true)
         return true
+    }
+
+    private fun esconderBarras(esconder: Boolean) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        val c = window.insetsController ?: return
+        if (esconder) {
+            c.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+            c.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            c.show(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+        }
     }
 
     // Alarme do Android como garantia: se o sistema congelar o app durante a
@@ -360,6 +388,9 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun acordarTela() {
+        cortina?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        cortina = null
+        // As barras do sistema ficam escondidas, como o painel sempre fica.
         val a = window.attributes
         if (a.screenBrightness == WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF) {
             a.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE

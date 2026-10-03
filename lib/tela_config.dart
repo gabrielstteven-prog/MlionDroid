@@ -1475,8 +1475,8 @@ class _TelaConfigState extends State<TelaConfig>
         const SizedBox(height: 16),
         _glassCard(children: [
           _toggleConfig(
-            titulo: 'Desligar a tela de verdade',
-            subtitulo: 'Apaga no início e acende sozinha no fim do horário',
+            titulo: 'Apagar a tela no horário de descanso',
+            subtitulo: 'Tela preta, sem bloquear o tablet. Acende sozinha no fim do horário',
             categoria: 'noite',
             chave: 'desligar_tela',
             valorPadrao: false,
@@ -1484,7 +1484,7 @@ class _TelaConfigState extends State<TelaConfig>
           const Divider(color: Colors.white10, height: 28),
           _toggleConfig(
             titulo: 'Acender quando a luz do cômodo acender',
-            subtitulo: 'Usa o sensor de luz do tablet (não gasta bateria)',
+            subtitulo: 'Sensor de luz do tablet (em alguns aparelhos só funciona com a câmera)',
             categoria: 'noite',
             chave: 'acordar_com_luz',
             valorPadrao: true,
@@ -3230,7 +3230,7 @@ class _TelaConfigState extends State<TelaConfig>
         if (valor > min) onChanged(valor - 1);
       }),
       Container(
-        width: 58,
+        width: sufixo.length > 1 ? 96 : 58,
         alignment: Alignment.center,
         child: Text(
           '${valor.toString().padLeft(2, '0')}$sufixo',
