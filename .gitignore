@@ -62,3 +62,8 @@ app.*.map.json
 # Windows/Web build
 /windows/flutter/ephemeral/
 /web/
+
+# MlionDroid
+/backup_antes_auditoria/
+/android/keystore/
+/android/key.properties

@@ -91,6 +91,12 @@ class _FolhaAtualizacao extends StatelessWidget {
                   style: GoogleFonts.rajdhani(
                       color: Colors.white70, fontSize: 15, height: 1.5),
                 ),
+                if (mgr.erroDownload != null) ...[
+                  const SizedBox(height: 12),
+                  Text(mgr.erroDownload!,
+                      style: GoogleFonts.rajdhani(
+                          color: Colors.redAccent, fontSize: 15)),
+                ],
                 const SizedBox(height: 24),
                 if (mgr.baixando) ...[
                   ClipRRect(

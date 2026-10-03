@@ -1,90 +1,43 @@
-// ═══════════════════════════════════════════════════════════════════════════════
-//  PATCH — info_hub.dart
-//  Adicionar suporte ao Spotify: ticker com ícone de álbum redondo + título
-// ═══════════════════════════════════════════════════════════════════════════════
-//
-//  Adicione as propriedades e método abaixo na classe InfoHub.
-//  Localização: logo após a declaração dos timers existentes (_tickerFetchTimer).
-//
-// ── NOVAS PROPRIEDADES (adicionar após _tickerFetchTimer) ──────────────────────
-//
-//   // ── Spotify ───────────────────────────────────────────────────────────────
-//   String _spotifyTitulo = '';
-//   String _spotifyArtista = '';
-//   bool _spotifyAtivo = false;
-//
-//   bool get spotifyTocando => _spotifyAtivo && _spotifyTitulo.isNotEmpty;
-//   String get spotifyTitulo => _spotifyTitulo;
-//   String get spotifyArtista => _spotifyArtista;
-//
-//   // Texto formatado para o ticker quando Spotify estiver ativo
-//   String get tickerSpotify =>
-//       '🎵 $_spotifyTitulo  •  $_spotifyArtista';
-//
-// ── NOVO MÉTODO (adicionar após _rotacionarTicker) ────────────────────────────
-//
-//   /// Chamado pelo SpotifyManager sempre que a faixa muda.
-//   void atualizarSpotify({
-//     required String titulo,
-//     required String artista,
-//     String? albumArtUrl,
-//   }) {
-//     _spotifyTitulo = titulo;
-//     _spotifyArtista = artista;
-//     _spotifyAtivo = titulo.isNotEmpty;
-//     notifyListeners();
-//   }
-//
-//   void limparSpotify() {
-//     _spotifyAtivo = false;
-//     _spotifyTitulo = '';
-//     _spotifyArtista = '';
-//     notifyListeners();
-//   }
-//
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// Abaixo está o info_hub.dart COMPLETO com o patch já aplicado.
-// Substitua o arquivo original por este.
-
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
-import 'package:intl/intl.dart';
-import 'package:xml/xml.dart';
 
 import 'config_manager.dart';
+import 'services/news_service.dart';
+import 'services/weather_service.dart';
 
-/// Hub central de informações sempre visíveis (relógio, clima, ticker).
+/// Hub das informações sempre visíveis na barra superior (relógio, clima,
+/// ticker de frases/notícias e música tocando).
+///
+/// Desempenho: o relógio é um ValueNotifier separado que só dispara quando
+/// o MINUTO muda (a barra mostra HH:mm). Antes o hub inteiro notificava a
+/// cada segundo e a barra toda era reconstruída 86.400 vezes por dia.
 class InfoHub extends ChangeNotifier {
   InfoHub._();
   static final InfoHub instance = InfoHub._();
 
   final _cfg = ConfigManager();
 
-  // ── Relógio ───────────────────────────────────────────────────────────────
-  String hora = '--:--';
-  String dataCurta = '';
-  String dataCompleta = '';
-  String diaSemana = '';
-  String diaSemanaCompleto = '';
+  /// Hora atual, truncada no minuto.
+  final ValueNotifier<DateTime> relogio = ValueNotifier(_minutoAtual());
+
+  static DateTime _minutoAtual() {
+    final n = DateTime.now();
+    return DateTime(n.year, n.month, n.day, n.hour, n.minute);
+  }
 
   // ── Clima ─────────────────────────────────────────────────────────────────
-  String temp = '--';
-  String sensacao = '--';
-  String cidadeLabel = '';
-  int weatherCode = 0;
-  int chanceChuva = 0;
-  bool climaCarregando = true;
+  DadosClima? get clima => WeatherService.instance.atual;
+  bool get climaCarregando => clima == null && !_climaFalhou;
+  bool _climaFalhou = false;
+  String get cidadeLabel => _cfg.getString('clima', 'cidade', 'Hortolândia');
+  String get estadoLabel => _cfg.getString('clima', 'estado', 'SP');
 
-  // ── Ticker (frases + notícias) ────────────────────────────────────────────
+  // ── Ticker ────────────────────────────────────────────────────────────────
   List<String> tickerItens = [];
   int _indiceTicker = 0;
 
   String get tickerAtual {
-    // Spotify tem prioridade quando estiver tocando
     if (spotifyTocando) return tickerSpotify;
     if (tickerItens.isEmpty) return 'MlionDroid Center • Painel inteligente';
     return tickerItens[_indiceTicker % tickerItens.length];
@@ -93,28 +46,24 @@ class InfoHub extends ChangeNotifier {
   // ── Spotify ───────────────────────────────────────────────────────────────
   String _spotifyTitulo = '';
   String _spotifyArtista = '';
-  bool _spotifyAtivo = false;
 
-  bool get spotifyTocando => _spotifyAtivo && _spotifyTitulo.isNotEmpty;
+  bool get spotifyTocando => _spotifyTitulo.isNotEmpty;
   String get spotifyTitulo => _spotifyTitulo;
   String get spotifyArtista => _spotifyArtista;
-
   String get tickerSpotify => '🎵 $_spotifyTitulo  •  $_spotifyArtista';
 
-  /// Chamado pelo SpotifyManager sempre que a faixa muda.
-  void atualizarSpotify({
-    required String titulo,
-    required String artista,
-    String? albumArtUrl,
-  }) {
+  void atualizarSpotify({required String titulo, required String artista}) {
+    if (titulo == _spotifyTitulo && artista == _spotifyArtista) return;
     _spotifyTitulo = titulo;
     _spotifyArtista = artista;
-    _spotifyAtivo = titulo.isNotEmpty;
     notifyListeners();
   }
 
+  /// A capa do álbum terminou de carregar — redesenha o ticker.
+  void capaMudou() => notifyListeners();
+
   void limparSpotify() {
-    _spotifyAtivo = false;
+    if (_spotifyTitulo.isEmpty) return;
     _spotifyTitulo = '';
     _spotifyArtista = '';
     notifyListeners();
@@ -127,29 +76,16 @@ class InfoHub extends ChangeNotifier {
   Timer? _tickerFetchTimer;
   bool _iniciado = false;
 
-  String get _lat => _cfg.getString('clima', 'lat', '-22.889');
-  String get _lon => _cfg.getString('clima', 'lon', '-47.222');
-
   void iniciar() {
     if (_iniciado) return;
     _iniciado = true;
 
-    _atualizarRelogio();
-    _relogioTimer =
-        Timer.periodic(const Duration(seconds: 1), (_) => _atualizarRelogio());
-
+    _agendarRelogio();
+    WeatherService.instance.addListener(notifyListeners);
+    _cfg.revisao.addListener(_configMudou);
+    _reagendarTimers();
     buscarClima();
-    final climaMin = _cfg.getInt('barra_info', 'intervalo_clima_min', 10);
-    _climaTimer = Timer.periodic(
-        Duration(minutes: climaMin.clamp(5, 60)), (_) => buscarClima());
-
     _carregarTicker();
-    _tickerFetchTimer =
-        Timer.periodic(const Duration(minutes: 30), (_) => _carregarTicker());
-
-    final rotSeg = _cfg.getInt('barra_info', 'rotacao_ticker_seg', 12);
-    _tickerRotateTimer = Timer.periodic(
-        Duration(seconds: rotSeg.clamp(6, 60)), (_) => _rotacionarTicker());
   }
 
   void encerrar() {
@@ -157,83 +93,59 @@ class InfoHub extends ChangeNotifier {
     _climaTimer?.cancel();
     _tickerRotateTimer?.cancel();
     _tickerFetchTimer?.cancel();
+    WeatherService.instance.removeListener(notifyListeners);
+    _cfg.revisao.removeListener(_configMudou);
     _iniciado = false;
   }
 
-  void _atualizarRelogio() {
+  /// Acorda exatamente na virada de cada minuto.
+  void _agendarRelogio() {
     final agora = DateTime.now();
-    final dias = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-    final diasCompletos = [
-      'Domingo',
-      'Segunda-feira',
-      'Terça-feira',
-      'Quarta-feira',
-      'Quinta-feira',
-      'Sexta-feira',
-      'Sábado'
-    ];
-    hora = DateFormat('HH:mm').format(agora);
-    dataCurta = DateFormat("dd/MM").format(agora);
-    dataCompleta = DateFormat("dd/MM/yyyy").format(agora);
-    diaSemana = dias[agora.weekday % 7];
-    diaSemanaCompleto = diasCompletos[agora.weekday % 7];
+    final proximo = DateTime(
+        agora.year, agora.month, agora.day, agora.hour, agora.minute + 1);
+    _relogioTimer = Timer(proximo.difference(agora), () {
+      relogio.value = _minutoAtual();
+      _agendarRelogio();
+    });
+  }
+
+  /// Os intervalos vêm das Configurações. Antes eram lidos só uma vez, ao
+  /// abrir o app — mudar nas configurações exigia reiniciar.
+  void _reagendarTimers() {
+    _climaTimer?.cancel();
+    final climaMin = _cfg.getInt('barra_info', 'intervalo_clima_min', 10);
+    _climaTimer = Timer.periodic(
+        Duration(minutes: climaMin.clamp(5, 60)), (_) => buscarClima());
+
+    _tickerFetchTimer?.cancel();
+    _tickerFetchTimer =
+        Timer.periodic(const Duration(minutes: 30), (_) => _carregarTicker());
+
+    _tickerRotateTimer?.cancel();
+    final rotSeg = _cfg.getInt('barra_info', 'rotacao_ticker_seg', 12);
+    _tickerRotateTimer = Timer.periodic(
+        Duration(seconds: rotSeg.clamp(6, 60)), (_) => _rotacionarTicker());
+  }
+
+  void _configMudou() {
+    _reagendarTimers();
+    _carregarTicker();
     notifyListeners();
   }
 
   void _rotacionarTicker() {
-    // Não rotaciona enquanto o Spotify estiver tocando — a faixa já ocupa o ticker
-    if (spotifyTocando) return;
-    if (tickerItens.length <= 1) return;
+    if (spotifyTocando || tickerItens.length <= 1) return;
     _indiceTicker = (_indiceTicker + 1) % tickerItens.length;
     notifyListeners();
   }
 
   Future<void> buscarClima() async {
     if (!_cfg.getBool('barra_info', 'mostrar_clima', true)) return;
-
-    cidadeLabel =
-        '${_cfg.getString('clima', 'cidade', 'Hortolândia')} • ${_cfg.getString('clima', 'estado', 'SP')}';
-
-    try {
-      final url = Uri.parse(
-        'https://api.open-meteo.com/v1/forecast'
-        '?latitude=$_lat&longitude=$_lon'
-        '&current=temperature_2m,apparent_temperature,weather_code'
-        '&hourly=precipitation_probability'
-        '&timezone=America%2FSao_Paulo',
-      );
-
-      final res = await http.get(url).timeout(const Duration(seconds: 10));
-      if (res.statusCode != 200) return;
-
-      final data = json.decode(res.body);
-      final current = data['current'];
-      final hourlyRain =
-          data['hourly']['precipitation_probability'] as List? ?? [];
-
-      int maxChuva = 0;
-      final agora = DateTime.now();
-      final hourlyTimes = data['hourly']['time'] as List? ?? [];
-      for (int i = 0; i < hourlyTimes.length; i++) {
-        final h = DateTime.parse(hourlyTimes[i] as String);
-        if (h.isAfter(agora) && h.day == agora.day) {
-          final p = (hourlyRain[i] as num?)?.toInt() ?? 0;
-          if (p > maxChuva) maxChuva = p;
-        }
-      }
-
-      temp = (current['temperature_2m'] as num?)?.round().toString() ?? '--';
-      sensacao =
-          (current['apparent_temperature'] as num?)?.round().toString() ?? '--';
-      weatherCode = current['weather_code'] as int? ?? 0;
-      chanceChuva = maxChuva;
-      climaCarregando = false;
-      notifyListeners();
-    } catch (e) {
-      debugPrint('InfoHub clima: $e');
-      climaCarregando = false;
-      notifyListeners();
-    }
+    final climaMin = _cfg.getInt('barra_info', 'intervalo_clima_min', 10);
+    final dados = await WeatherService.instance
+        .obter(maxIdade: Duration(minutes: climaMin.clamp(5, 60)));
+    _climaFalhou = dados == null;
+    notifyListeners();
   }
 
   Future<void> _carregarTicker() async {
@@ -243,10 +155,14 @@ class InfoHub extends ChangeNotifier {
     final itens = <String>[];
 
     if (tipo == 'frase' || tipo == 'misturado') {
-      itens.addAll(_frasesDoDia());
+      itens.add('💡 ${fraseDoDia()}');
     }
     if (tipo == 'noticias' || tipo == 'misturado') {
-      itens.addAll(await _buscarHeadlines());
+      final r = await NewsService.instance.buscar(const [
+        FonteRss('https://g1.globo.com/rss/g1/sp/campinas-regiao/', 'Região'),
+        FonteRss('https://g1.globo.com/rss/g1/', 'Brasil'),
+      ], validade: const Duration(minutes: 30), porFonte: 3);
+      itens.addAll(r.noticias.take(6).map((n) => '📰 ${n.titulo}'));
     }
 
     if (itens.isEmpty) {
@@ -257,57 +173,33 @@ class InfoHub extends ChangeNotifier {
     _indiceTicker = 0;
     notifyListeners();
   }
+}
 
-  List<String> _frasesDoDia() {
-    const frases = [
-      '💡 "A jornada de mil milhas começa com um único passo." — Lao Tzu',
-      '💡 "Acredite que você pode e você já está na metade do caminho." — Roosevelt',
-      '💡 "O sucesso é a soma de pequenos esforços repetidos dia após dia."',
-      '💡 "Comece onde você está. Use o que você tem. Faça o que você pode."',
-      '💡 "A felicidade não é algo pronto. Ela vem das suas próprias ações."',
-      '💡 "Faça cada dia valer a pena."',
-    ];
-    final idx = DateTime.now().difference(DateTime(DateTime.now().year)).inDays;
-    return [frases[idx % frases.length]];
-  }
+/// Banco de frases em português — uma por dia, sem depender de API.
+/// Compartilhado pela barra superior e pela tela Bom Dia.
+const frasesDoDia = [
+  '"Comece cada dia com um sorriso e termine com alegria." — Anônimo',
+  '"O segredo é começar. Isso é tudo." — Mark Twain',
+  '"Cada amanhecer é uma nova oportunidade de mudar sua vida." — Anônimo',
+  '"Acredite que você pode — e você já está na metade do caminho." — Theodore Roosevelt',
+  '"A persistência é o caminho do êxito." — Charles Chaplin',
+  '"Não é o quanto fazemos, mas quanto amor colocamos no que fazemos." — Madre Teresa de Calcutá',
+  '"O otimista vê a oportunidade em toda dificuldade." — Winston Churchill',
+  '"A vida é a arte do encontro, embora haja tanto desencontro pela vida." — Vinícius de Moraes',
+  '"Feliz aquele que transfere o que sabe e aprende o que ensina." — Cora Coralina',
+  '"O que vale na vida não é o ponto de partida e sim a caminhada." — Cora Coralina',
+  '"Não temos mais tempo de sermos os mesmos." — Paulo Freire',
+  '"Que os dias difíceis te ensinem, e os bons te façam grato." — Anônimo',
+  '"Comece fazendo o que é necessário, depois o que é possível, e de repente você estará fazendo o impossível." — São Francisco de Assis',
+  '"A jornada de mil milhas começa com um único passo." — Lao Tzu',
+  '"O sucesso é a soma de pequenos esforços repetidos dia após dia." — Robert Collier',
+  '"Comece onde você está. Use o que você tem. Faça o que você pode." — Arthur Ashe',
+  '"A felicidade não é algo pronto. Ela vem das suas próprias ações." — Dalai Lama',
+  '"Bom mesmo é ir à luta com determinação, abraçar a vida com paixão, perder com classe e vencer com ousadia." — Charles Chaplin',
+];
 
-  Future<List<String>> _buscarHeadlines() async {
-    final urls = [
-      'https://g1.globo.com/rss/g1/sp/campinas-regiao/',
-      'https://g1.globo.com/rss/g1/',
-    ];
-    final headlines = <String>[];
-
-    for (final url in urls) {
-      try {
-        final res =
-            await http.get(Uri.parse(url)).timeout(const Duration(seconds: 8));
-        if (res.statusCode != 200) continue;
-
-        final doc = XmlDocument.parse(utf8.decode(res.bodyBytes));
-        for (final item in doc.findAllElements('item').take(3)) {
-          final titles = item.findElements('title');
-          if (titles.isEmpty) continue;
-          final title = titles.first.innerText;
-          if (title.isNotEmpty) {
-            headlines.add('📰 $title');
-          }
-        }
-        if (headlines.length >= 4) break;
-      } catch (e) {
-        debugPrint('InfoHub RSS $url: $e');
-      }
-    }
-    return headlines.take(5).toList();
-  }
-
-  String emojiClima(int code) {
-    if (code == 0) return '☀️';
-    if (code <= 3) return '⛅';
-    if (code <= 48) return '☁️';
-    if (code <= 67) return '🌧️';
-    if (code <= 82) return '🌦️';
-    if (code >= 95) return '⛈️';
-    return '🌤️';
-  }
+String fraseDoDia([DateTime? data]) {
+  final d = data ?? DateTime.now();
+  final idx = d.difference(DateTime(d.year)).inDays;
+  return frasesDoDia[idx % frasesDoDia.length];
 }

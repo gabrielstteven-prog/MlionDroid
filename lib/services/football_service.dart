@@ -1,0 +1,327 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
+import '../cache_manager.dart';
+import '../config_manager.dart';
+import '../times.dart';
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FootballService — dados de futebol pela API pública da ESPN.
+//
+//  Gratuita e sem chave (substitui a football-data.org, que exigia uma
+//  chave que acabava exposta dentro do APK). Traz todas as competições do
+//  time juntas (Brasileirão, Libertadores, Copa do Brasil, estaduais...),
+//  com data, horário, estádio, placar e escudos em PNG.
+//
+//  Não é uma API oficialmente documentada: se a ESPN mudar algo, as telas
+//  continuam mostrando o último dado salvo em cache.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class TimePartida {
+  final int id;
+  final String nome;
+  final String abreviacao;
+  final String escudo;
+  final int? gols;
+  const TimePartida(this.id, this.nome, this.abreviacao, this.escudo, this.gols);
+}
+
+class Partida {
+  final String id;
+  final DateTime data; // horário local
+  final String competicao;
+  final TimePartida mandante;
+  final TimePartida visitante;
+  final String estadio;
+  final String cidade;
+
+  /// 'pre' (agendado), 'in' (em andamento) ou 'post' (encerrado).
+  final String estado;
+  final String relogio; // ex.: "67'" quando em andamento
+  final String detalhe; // ex.: "Intervalo", "Fim"
+
+  const Partida({
+    required this.id,
+    required this.data,
+    required this.competicao,
+    required this.mandante,
+    required this.visitante,
+    required this.estadio,
+    required this.cidade,
+    required this.estado,
+    required this.relogio,
+    required this.detalhe,
+  });
+
+  bool get agendada => estado == 'pre';
+  bool get aoVivo => estado == 'in';
+  bool get encerrada => estado == 'post';
+
+  bool envolve(int espnId) => mandante.id == espnId || visitante.id == espnId;
+  TimePartida adversarioDe(int espnId) =>
+      mandante.id == espnId ? visitante : mandante;
+  bool mandanteEh(int espnId) => mandante.id == espnId;
+
+  /// 'V', 'E' ou 'D' do ponto de vista do time [espnId].
+  String? resultadoPara(int espnId) {
+    final a = mandante.gols, b = visitante.gols;
+    if (!encerrada || a == null || b == null) return null;
+    final nossos = mandanteEh(espnId) ? a : b;
+    final deles = mandanteEh(espnId) ? b : a;
+    if (nossos > deles) return 'V';
+    if (nossos < deles) return 'D';
+    return 'E';
+  }
+
+  static int? _gols(dynamic score) {
+    if (score == null) return null;
+    if (score is num) return score.toInt();
+    if (score is String) return int.tryParse(score);
+    if (score is Map) {
+      final v = score['value'] ?? score['displayValue'];
+      if (v is num) return v.toInt();
+      if (v is String) return int.tryParse(v);
+    }
+    return null;
+  }
+
+  static TimePartida _time(Map<String, dynamic> c) {
+    final t = c['team'] as Map<String, dynamic>? ?? {};
+    final logos = t['logos'] as List?;
+    var logo = '';
+    if (logos != null && logos.isNotEmpty && logos.first is Map) {
+      logo = (logos.first as Map)['href'] as String? ?? '';
+    }
+    logo = logo.isNotEmpty ? logo : (t['logo'] as String? ?? '');
+    final id = int.tryParse('${t['id'] ?? c['id'] ?? ''}') ?? -1;
+    if (logo.isEmpty && id > 0) {
+      logo = 'https://a.espncdn.com/i/teamlogos/soccer/500/$id.png';
+    }
+    return TimePartida(
+      id,
+      t['shortDisplayName'] as String? ?? t['displayName'] as String? ?? '',
+      t['abbreviation'] as String? ?? '',
+      logo,
+      _gols(c['score']),
+    );
+  }
+
+  static Partida? fromEspn(Map<String, dynamic> ev) {
+    final comps = ev['competitions'] as List?;
+    if (comps == null || comps.isEmpty) return null;
+    final comp = comps.first as Map<String, dynamic>;
+    final competidores =
+        (comp['competitors'] as List? ?? []).cast<Map<String, dynamic>>();
+    if (competidores.length < 2) return null;
+    final casa = competidores.firstWhere((c) => c['homeAway'] == 'home',
+        orElse: () => competidores[0]);
+    final fora = competidores.firstWhere((c) => c['homeAway'] == 'away',
+        orElse: () => competidores[1]);
+    final data = DateTime.tryParse(ev['date'] as String? ?? '');
+    if (data == null) return null;
+    final status = comp['status'] as Map<String, dynamic>? ??
+        ev['status'] as Map<String, dynamic>? ??
+        {};
+    final tipo = status['type'] as Map<String, dynamic>? ?? {};
+    final venue = comp['venue'] as Map<String, dynamic>? ?? {};
+    final liga = ev['league'] as Map<String, dynamic>?;
+    return Partida(
+      id: '${ev['id']}',
+      data: data.toLocal(),
+      competicao: traduzirCompeticao(
+          liga?['name'] as String? ?? liga?['abbreviation'] as String? ?? ''),
+      mandante: _time(casa),
+      visitante: _time(fora),
+      estadio: venue['fullName'] as String? ?? '',
+      cidade: (venue['address'] as Map?)?['city'] as String? ?? '',
+      estado: tipo['state'] as String? ?? 'pre',
+      relogio: status['displayClock'] as String? ?? '',
+      detalhe: tipo['shortDetail'] as String? ?? '',
+    );
+  }
+}
+
+/// Os nomes das competições vêm em inglês na ESPN.
+String traduzirCompeticao(String nome) {
+  const mapa = {
+    'Brazilian Serie A': 'Brasileirão',
+    'Brazilian Serie B': 'Brasileirão Série B',
+    'CONMEBOL Libertadores': 'Libertadores',
+    'CONMEBOL Sudamericana': 'Sul-Americana',
+    'Brazilian Copa do Brasil': 'Copa do Brasil',
+    'Copa do Brasil': 'Copa do Brasil',
+    'Brazilian Campeonato Paulista': 'Paulistão',
+    'Brazilian Campeonato Carioca': 'Carioca',
+    'Brazilian Campeonato Mineiro': 'Mineiro',
+    'Brazilian Campeonato Gaucho': 'Gauchão',
+    'FIFA Club World Cup': 'Mundial de Clubes',
+    'CONMEBOL Recopa': 'Recopa',
+    'Supercopa do Brasil': 'Supercopa',
+  };
+  return mapa[nome] ?? nome;
+}
+
+class LinhaTabela {
+  final int posicao;
+  final int timeId;
+  final String time;
+  final String escudo;
+  final int pontos, jogos, vitorias, empates, derrotas, saldo;
+  const LinhaTabela({
+    required this.posicao,
+    required this.timeId,
+    required this.time,
+    required this.escudo,
+    required this.pontos,
+    required this.jogos,
+    required this.vitorias,
+    required this.empates,
+    required this.derrotas,
+    required this.saldo,
+  });
+}
+
+class GrupoTabela {
+  final String nome;
+  final List<LinhaTabela> linhas;
+  const GrupoTabela(this.nome, this.linhas);
+}
+
+/// Resultado com a data de quando o dado foi obtido (para "atualizado há").
+class ComIdade<T> {
+  final T valor;
+  final DateTime atualizadoEm;
+  const ComIdade(this.valor, this.atualizadoEm);
+}
+
+class FootballService {
+  FootballService._();
+  static final FootballService instance = FootballService._();
+
+  static const _base = 'https://site.api.espn.com/apis';
+  final _cfg = ConfigManager();
+
+  TimeInfo get timeAtual {
+    final key = _cfg.getString('time', 'time_key', timePadrao);
+    return timesDisponiveis[key] ?? timesDisponiveis[timePadrao]!;
+  }
+
+  Future<Map<String, dynamic>> _getJson(String url) async {
+    final res =
+        await http.get(Uri.parse(url)).timeout(const Duration(seconds: 12));
+    if (res.statusCode != 200) {
+      throw Exception('ESPN respondeu ${res.statusCode} para $url');
+    }
+    return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  List<Partida> _partidas(Map<String, dynamic> json) {
+    final evs = (json['events'] as List? ?? []).cast<Map<String, dynamic>>();
+    return evs.map(Partida.fromEspn).whereType<Partida>().toList();
+  }
+
+  /// Próximos jogos (inclui um jogo em andamento), do mais próximo ao mais
+  /// distante. Quando há jogo perto de começar ou rolando, o cache dura só
+  /// 1 minuto, para o placar ao vivo acompanhar.
+  Future<ComIdade<List<Partida>>?> proximosJogos({bool forcar = false}) async {
+    final id = timeAtual.espnId;
+    final chave = 'futebol_proximos_$id';
+    final antigo = await CacheManager.instance.obterEntrada<Map<String, dynamic>>(chave);
+    var validade = _cfg.getIntervaloAtualizacao('proxima_partida');
+    if (antigo != null && _temJogoPerto(_partidas(antigo.dados))) {
+      validade = const Duration(minutes: 1);
+    }
+    final entrada = await buscarComCache<Map<String, dynamic>>(
+      chave: chave,
+      validade: validade,
+      forcar: forcar,
+      buscar: () =>
+          _getJson('$_base/site/v2/sports/soccer/all/teams/$id/schedule?fixture=true'),
+    );
+    if (entrada == null) return null;
+    final agora = DateTime.now();
+    final lista = _partidas(entrada.dados)
+        .where((p) =>
+            !p.encerrada &&
+            p.data.isAfter(agora.subtract(const Duration(hours: 3))))
+        .toList()
+      ..sort((a, b) => a.data.compareTo(b.data));
+    return ComIdade(lista, entrada.salvoEm);
+  }
+
+  bool _temJogoPerto(List<Partida> ps) {
+    final agora = DateTime.now();
+    return ps.any((p) =>
+        p.aoVivo ||
+        (p.agendada &&
+            p.data.difference(agora).inMinutes.abs() < 150));
+  }
+
+  /// Últimos resultados, do mais recente ao mais antigo.
+  Future<ComIdade<List<Partida>>?> ultimosResultados({int limite = 5}) async {
+    final id = timeAtual.espnId;
+    final entrada = await buscarComCache<Map<String, dynamic>>(
+      chave: 'futebol_resultados_$id',
+      validade: const Duration(hours: 3),
+      buscar: () =>
+          _getJson('$_base/site/v2/sports/soccer/all/teams/$id/schedule'),
+    );
+    if (entrada == null) return null;
+    final lista = _partidas(entrada.dados).where((p) => p.encerrada).toList()
+      ..sort((a, b) => b.data.compareTo(a.data));
+    return ComIdade(lista.take(limite).toList(), entrada.salvoEm);
+  }
+
+  /// Classificação. [liga]: 'bra.1' (Brasileirão), 'conmebol.libertadores'...
+  Future<ComIdade<List<GrupoTabela>>?> tabela(String liga) async {
+    final entrada = await buscarComCache<Map<String, dynamic>>(
+      chave: 'futebol_tabela_$liga',
+      validade: _cfg.getIntervaloAtualizacao('classificacao'),
+      buscar: () => _getJson('$_base/v2/sports/soccer/$liga/standings'),
+    );
+    if (entrada == null) return null;
+    return ComIdade(parseTabela(entrada.dados), entrada.salvoEm);
+  }
+
+  static List<GrupoTabela> parseTabela(Map<String, dynamic> json) {
+    final grupos = <GrupoTabela>[];
+    final filhos = (json['children'] as List? ?? []).cast<Map<String, dynamic>>();
+    for (final g in filhos) {
+      final entries = ((g['standings'] as Map?)?['entries'] as List? ?? [])
+          .cast<Map<String, dynamic>>();
+      final linhas = <LinhaTabela>[];
+      for (final e in entries) {
+        final stats = <String, num>{};
+        for (final s in (e['stats'] as List? ?? []).cast<Map<String, dynamic>>()) {
+          final v = s['value'];
+          if (v is num) stats[s['name'] as String? ?? ''] = v;
+        }
+        final team = e['team'] as Map<String, dynamic>? ?? {};
+        final logos = team['logos'] as List?;
+        int st(String k) => (stats[k] ?? 0).round();
+        linhas.add(LinhaTabela(
+          posicao: st('rank'),
+          timeId: int.tryParse('${team['id']}') ?? -1,
+          time: team['shortDisplayName'] as String? ??
+              team['displayName'] as String? ??
+              '',
+          escudo: (logos != null && logos.isNotEmpty)
+              ? (logos.first as Map)['href'] as String? ?? ''
+              : '',
+          pontos: st('points'),
+          jogos: st('gamesPlayed'),
+          vitorias: st('wins'),
+          empates: st('ties'),
+          derrotas: st('losses'),
+          saldo: st('pointDifferential'),
+        ));
+      }
+      linhas.sort((a, b) => a.posicao.compareTo(b.posicao));
+      final nome = (g['name'] as String? ?? '')
+          .replaceFirst(RegExp(r'^Group\s+'), 'Grupo ');
+      grupos.add(GrupoTabela(nome, linhas));
+    }
+    return grupos;
+  }
+}

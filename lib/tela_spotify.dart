@@ -9,12 +9,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'config_manager.dart';
 import 'info_hub.dart';
-import 'responsive.dart';
 import 'performance_manager.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,13 +75,6 @@ class MusicInfo {
   final int trackNumber;
   final List<String> generos;
 
-  // mantidos por compatibilidade com _buildCard
-  final double danceability;
-  final double energy;
-  final double valence;
-  final double acousticness;
-  final int bpm;
-  final String key;
 
   const MusicInfo({
     this.releaseDate = '',
@@ -95,44 +86,16 @@ class MusicInfo {
     this.albumType = '',
     this.trackNumber = 0,
     this.generos = const [],
-    this.danceability = 0,
-    this.energy = 0,
-    this.valence = 0,
-    this.acousticness = 0,
-    this.bpm = 0,
-    this.key = '',
   });
 }
 
-class GeniusManager extends ChangeNotifier {
-  GeniusManager._();
-  static final GeniusManager instance = GeniusManager._();
+class InfoMusicaManager extends ChangeNotifier {
+  InfoMusicaManager._();
+  static final InfoMusicaManager instance = InfoMusicaManager._();
 
   String _ultimaFaixaId = '';
   MusicInfo? info;
   bool carregando = false;
-
-  // Getter mantido por compatibilidade
-  String get letra => '';
-
-  static const _notas = [
-    'C',
-    'C#',
-    'D',
-    'D#',
-    'E',
-    'F',
-    'F#',
-    'G',
-    'G#',
-    'A',
-    'A#',
-    'B'
-  ];
-
-  Future<void> buscarLetra(SpotifyTrack track) async {
-    await buscarInfo(track);
-  }
 
   Future<void> buscarInfo(SpotifyTrack track) async {
     if (track.id == _ultimaFaixaId || track.id.isEmpty) return;
@@ -169,7 +132,6 @@ class GeniusManager extends ChangeNotifier {
       final popularidade = (t['popularity'] as int?) ?? 0;
       final explicit = (t['explicit'] as bool?) ?? false;
       final numMercados = ((t['available_markets'] as List?)?.length) ?? 0;
-      final discNumber = (t['disc_number'] as int?) ?? 1;
       final trackNumber = (t['track_number'] as int?) ?? 0;
       final album = t['album'] as Map<String, dynamic>? ?? {};
       final releaseDate = album['release_date'] as String? ?? '';
@@ -228,16 +190,6 @@ class GeniusManager extends ChangeNotifier {
         generos: generos.take(3).toList(),
       );
 
-      debugPrint('=== MusicInfo ===');
-      debugPrint('pop: $popularidade');
-      debugPrint('gravadora: $gravadora');
-      debugPrint('generos: $generos');
-      debugPrint('numMercados: $numMercados');
-      debugPrint('totalFaixas: $totalFaixas');
-      debugPrint('trackNumber: $trackNumber');
-      debugPrint('explicit: $explicit');
-      debugPrint('releaseDate: $releaseDate');
-      debugPrint('=================');
     } catch (e) {
       debugPrint('buscarInfo ERRO: $e');
     }
@@ -457,10 +409,20 @@ class SpotifyManager extends ChangeNotifier {
   }
 
   // ── Polling ────────────────────────────────────────────────────────────────
-  void _iniciarPolling() {
+  // Adaptativo: a cada 3s com música tocando (para pegar a troca de faixa
+  // rápido) e a cada 20s quando nada toca. Antes eram 3s o dia inteiro
+  // (~28 mil requisições por dia, mesmo com o Spotify fechado).
+  void _agendarProximaConsulta() {
     _pollingTimer?.cancel();
-    _pollingTimer =
-        Timer.periodic(const Duration(seconds: 3), (_) => _buscarFaixaAtual());
+    final tocando = faixaAtual?.tocando ?? false;
+    _pollingTimer = Timer(Duration(seconds: tocando ? 3 : 20), () async {
+      await _buscarFaixaAtual();
+      if (autenticado) _agendarProximaConsulta();
+    });
+  }
+
+  void _iniciarPolling() {
+    _agendarProximaConsulta();
 
     _progressoTimer?.cancel();
     _progressoTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -474,7 +436,7 @@ class SpotifyManager extends ChangeNotifier {
     });
   }
 
-  Future<void> _buscarFaixaAtual() async {
+  Future<void> _buscarFaixaAtual({bool jaRenovou = false}) async {
     if (_accessToken.isEmpty) return;
 
     // Auto-renova token se estiver perto de expirar
@@ -494,17 +456,17 @@ class SpotifyManager extends ChangeNotifier {
       if (res.statusCode == 204 || res.body.isEmpty) {
         if (faixaAtual != null) {
           faixaAtual = null;
-          InfoHub.instance.limparSpotify();
           notifyListeners();
         }
+        InfoHub.instance.limparSpotify();
         return;
       }
 
       if (res.statusCode == 401) {
-        // Tenta renovar antes de deslogar
-        final renovado = await _renovarToken();
-        if (renovado) {
-          await _buscarFaixaAtual();
+        // Tenta renovar UMA vez. Antes, se a API seguisse respondendo 401
+        // mesmo com token novo, a função chamava a si mesma sem fim.
+        if (!jaRenovou && await _renovarToken()) {
+          await _buscarFaixaAtual(jaRenovou: true);
         }
         return;
       }
@@ -521,17 +483,19 @@ class SpotifyManager extends ChangeNotifier {
       _ultimoId = track.id;
       faixaAtual = track;
 
-      InfoHub.instance.atualizarSpotify(
-        titulo: track.titulo,
-        artista: track.artista,
-        albumArtUrl: track.capaUrl,
-      );
+      // A faixa só ocupa o ticker da barra enquanto está tocando de fato.
+      if (track.tocando) {
+        InfoHub.instance
+            .atualizarSpotify(titulo: track.titulo, artista: track.artista);
+      } else {
+        InfoHub.instance.limparSpotify();
+      }
 
       if (trocou) {
         await _carregarCapa(track.capaUrl);
-        // Busca letra em paralelo
-        GeniusManager.instance
-            .buscarLetra(track)
+        // Informações extras da música (gravadora, gêneros...) em paralelo
+        InfoMusicaManager.instance
+            .buscarInfo(track)
             .then((_) => notifyListeners());
         onFaixaTrocada?.call();
       }
@@ -553,6 +517,7 @@ class SpotifyManager extends ChangeNotifier {
       if (res.statusCode == 200) {
         albumArtBytes = res.bodyBytes;
         notifyListeners();
+        InfoHub.instance.capaMudou(); // mini-capa no ticker da barra
       }
     } catch (e) {
       debugPrint('SpotifyManager._carregarCapa: $e');
@@ -560,7 +525,7 @@ class SpotifyManager extends ChangeNotifier {
   }
 
   int get progressoAtualMs => _progressoLocal;
-  String get accessToken => _accessToken; // para GeniusManager
+  String get accessToken => _accessToken; // para InfoMusicaManager
 
   // ── Controles ──────────────────────────────────────────────────────────────
   Future<void> _comando(String endpoint, String method) async {
@@ -584,10 +549,11 @@ class SpotifyManager extends ChangeNotifier {
   Future<void> faixaAnterior() => _comando('previous', 'POST');
 
   Future<void> togglePlayPause() async {
-    if (faixaAtual?.tocando ?? false)
+    if (faixaAtual?.tocando ?? false) {
       await pause();
-    else
+    } else {
       await play();
+    }
   }
 
   void deslogar() async {
@@ -600,7 +566,7 @@ class SpotifyManager extends ChangeNotifier {
     albumArtBytes = null;
     autenticado = false;
     InfoHub.instance.limparSpotify();
-    GeniusManager.instance.limpar();
+    InfoMusicaManager.instance.limpar();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kAccess);
     await prefs.remove(_kRefresh);
@@ -639,8 +605,6 @@ class _TelaSpotifyState extends State<TelaSpotify>
   late Animation<double> _pulse;
   late Animation<double> _vizAnim; // fase das ondas
 
-  final ScrollController _letraScroll = ScrollController();
-  Timer? _letraScrollTimer;
   Timer? _saidaTimer;
   int _infoCardIndex = 0; // card atual do painel de infos
   Timer? _infoCardTimer; // rotação automática dos cards
@@ -670,8 +634,8 @@ class _TelaSpotifyState extends State<TelaSpotify>
     // Busca informações da faixa atual se já houver uma tocando
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final faixa = _spotify.faixaAtual;
-      if (faixa != null && GeniusManager.instance.info == null) {
-        GeniusManager.instance.buscarInfo(faixa).then((_) {
+      if (faixa != null && InfoMusicaManager.instance.info == null) {
+        InfoMusicaManager.instance.buscarInfo(faixa).then((_) {
           if (mounted) {
             setState(() {});
             _iniciarRotacaoCards();
@@ -686,8 +650,6 @@ class _TelaSpotifyState extends State<TelaSpotify>
     _entradaCtrl.dispose();
     _pulseCtrl.dispose();
     _vizCtrl.dispose();
-    _letraScroll.dispose();
-    _letraScrollTimer?.cancel();
     _infoCardTimer?.cancel();
     _saidaTimer?.cancel();
     _spotify.removeListener(_onUpdate);
@@ -698,7 +660,7 @@ class _TelaSpotifyState extends State<TelaSpotify>
     if (!mounted) return;
     setState(() {});
     // Inicia rotação se info acabou de chegar
-    if (GeniusManager.instance.info != null && _infoCardTimer == null) {
+    if (InfoMusicaManager.instance.info != null && _infoCardTimer == null) {
       _iniciarRotacaoCards();
     }
   }
@@ -706,7 +668,7 @@ class _TelaSpotifyState extends State<TelaSpotify>
   void _iniciarRotacaoCards() {
     _infoCardTimer?.cancel();
     _infoCardIndex = 0;
-    final info = GeniusManager.instance.info;
+    final info = InfoMusicaManager.instance.info;
     if (info == null) return;
     _infoCardTimer = Timer.periodic(const Duration(seconds: 6), (_) {
       if (!mounted) return;
@@ -716,7 +678,7 @@ class _TelaSpotifyState extends State<TelaSpotify>
   }
 
   int _totalCards() {
-    final info = GeniusManager.instance.info;
+    final info = InfoMusicaManager.instance.info;
     if (info == null) return 1;
     int t = 0;
     if (info.releaseDate.isNotEmpty) t++;
@@ -739,21 +701,11 @@ class _TelaSpotifyState extends State<TelaSpotify>
 
   void _toqueInteragiu() => _iniciarTimerSaida();
 
-  void _iniciarScrollLetra() {
-    _letraScrollTimer?.cancel();
-    _letraScrollTimer = Timer(const Duration(seconds: 4), () {
-      if (!_letraScroll.hasClients) return;
-      final max = _letraScroll.position.maxScrollExtent;
-      if (max > 0)
-        _letraScroll.animateTo(max,
-            duration: const Duration(seconds: 35), curve: Curves.linear);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (_cfg.getString('spotify', 'client_id', '').isEmpty)
+    if (_cfg.getString('spotify', 'client_id', '').isEmpty) {
       return _telaConfigurar();
+    }
     if (!_spotify.autenticado) return _telaLogin();
 
     final track = _spotify.faixaAtual;
@@ -843,13 +795,12 @@ class _TelaSpotifyState extends State<TelaSpotify>
     final posMs = _spotify.progressoAtualMs;
     final durMs = track.duracaoMs;
     final progresso = durMs > 0 ? (posMs / durMs).clamp(0.0, 1.0) : 0.0;
-    final letra = GeniusManager.instance.letra;
     final capaSize = (sh * 0.60).clamp(160.0, 360.0);
 
     return Column(children: [
       // ── Capa + Infos lado a lado ──────────────────────────────────────────
       Expanded(
-        flex: letra.isNotEmpty ? 58 : 100,
+        flex: 58,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -952,10 +903,10 @@ class _TelaSpotifyState extends State<TelaSpotify>
         ),
       ),
 
-      // ── Letra ─────────────────────────────────────────────────────────────
+      // ── Informações da música (gravadora, popularidade, gêneros...)
       Expanded(
         flex: 42,
-        child: _painelLetra(letra, sw),
+        child: _painelInfoMusica(sw),
       ),
     ]);
   }
@@ -1084,15 +1035,9 @@ class _TelaSpotifyState extends State<TelaSpotify>
         ),
       );
 
-  Widget _painelLetra(String letra, double sw) {
-    // Redireciona para o novo painel de informações
-    return _painelInfoMusica(sw);
-  }
-
   Widget _painelInfoMusica(double sw) {
-    final genius = GeniusManager.instance;
-    final MusicInfo? info = genius.info;
-    final temToken = _cfg.getString('spotify', 'genius_token', '').isNotEmpty;
+    final musica = InfoMusicaManager.instance;
+    final MusicInfo? info = musica.info;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
@@ -1141,7 +1086,7 @@ class _TelaSpotifyState extends State<TelaSpotify>
                                 ),
                               )),
                     ),
-                  if (genius.carregando) ...[
+                  if (musica.carregando) ...[
                     const SizedBox(width: 8),
                     const SizedBox(
                         width: 10,
@@ -1159,11 +1104,9 @@ class _TelaSpotifyState extends State<TelaSpotify>
                   child: info == null
                       ? Center(
                           child: Text(
-                            temToken
-                                ? genius.carregando
-                                    ? 'Buscando informacoes...'
-                                    : 'Informacoes nao encontradas'
-                                : 'Configure o Genius Token em Configuracoes > Spotify',
+                            musica.carregando
+                                ? 'Buscando informações...'
+                                : 'Informações não encontradas',
                             textAlign: TextAlign.center,
                             style: GoogleFonts.poppins(
                                 color: Colors.white30,
@@ -1473,8 +1416,8 @@ class _TelaSpotifyState extends State<TelaSpotify>
           color: Colors.black,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           child: Row(children: [
-            Icon(Icons.music_note_rounded,
-                color: const Color(0xFF1DB954), size: 28),
+            const Icon(Icons.music_note_rounded,
+                color: Color(0xFF1DB954), size: 28),
             const SizedBox(width: 12),
             Text('Conectar ao Spotify',
                 style: GoogleFonts.poppins(
@@ -1550,8 +1493,8 @@ class _AudioVisualizerPainter extends CustomPainter {
           begin: Alignment.bottomCenter,
           end: Alignment.topCenter,
           colors: [
-            const Color(0xFF1DB954).withOpacity(0.35),
-            const Color(0xFF00d4ff).withOpacity(0.18),
+            const Color(0xFF1DB954).withValues(alpha: 0.35),
+            const Color(0xFF00d4ff).withValues(alpha: 0.18),
             Colors.transparent,
           ],
           stops: const [0.0, 0.5, 1.0],
@@ -1586,7 +1529,7 @@ class _AudioVisualizerPainter extends CustomPainter {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            const Color(0xFF1DB954).withOpacity(opacidade * (1 - onda * 0.25)),
+            const Color(0xFF1DB954).withValues(alpha: opacidade * (1 - onda * 0.25)),
             Colors.transparent,
           ],
         ).createShader(

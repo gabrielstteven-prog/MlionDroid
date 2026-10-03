@@ -1,24 +1,29 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import 'dart:ui';
-import 'dart:io';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:file_picker/file_picker.dart';
+
+import 'cache_manager.dart';
 import 'config_manager.dart';
-import 'responsive.dart';
 import 'performance_manager.dart';
-import 'update_manager.dart';
-import 'update_banner.dart';
+import 'responsive.dart';
+import 'services/fotos_service.dart';
+import 'services/google_auth_service.dart';
+import 'services/weather_service.dart';
+import 'tela_brasil.dart' show categoriasBrasil;
+import 'tela_regiao.dart' show cidadesRegiao;
 import 'tela_spotify.dart';
+import 'times.dart';
+import 'update_banner.dart';
+import 'update_manager.dart';
 
 // ── Estados brasileiros (sigla → nome completo) ───────────────────────────
-// Lista estática — não muda, então não precisa buscar da internet.
 const Map<String, String> estadosBrasil = {
   'AC': 'Acre',
   'AL': 'Alagoas',
@@ -48,201 +53,6 @@ const Map<String, String> estadosBrasil = {
   'SE': 'Sergipe',
   'TO': 'Tocantins',
 };
-
-class TimeInfo {
-  final String nome;
-  final String nomeRss;
-  final String corTop;
-  final String corBottom;
-  final String corDestaque;
-  final String emoji;
-  final String escudoAsset;
-  final int teamId;
-
-  const TimeInfo({
-    required this.nome,
-    required this.nomeRss,
-    required this.corTop,
-    required this.corBottom,
-    required this.corDestaque,
-    required this.emoji,
-    required this.teamId,
-    this.escudoAsset = '',
-  });
-}
-
-const Map<String, TimeInfo> timesDisponiveis = {
-  'palmeiras': TimeInfo(
-      nome: 'Palmeiras',
-      nomeRss: 'palmeiras',
-      corTop: '0xFF00441B',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFFC1A163',
-      emoji: '🟢',
-      teamId: 1769,
-      escudoAsset: 'assets/escudos/palmeiras.png'),
-  'flamengo': TimeInfo(
-      nome: 'Flamengo',
-      nomeRss: 'flamengo',
-      corTop: '0xFF8B0000',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFFFFD700',
-      emoji: '🔴',
-      teamId: 1783,
-      escudoAsset: 'assets/escudos/flamengo.png'),
-  'corinthians': TimeInfo(
-      nome: 'Corinthians',
-      nomeRss: 'corinthians',
-      corTop: '0xFF1a1a1a',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFFFFFFFF',
-      emoji: '⚫',
-      teamId: 1779,
-      escudoAsset: 'assets/escudos/corinthians.png'),
-  'sao-paulo': TimeInfo(
-      nome: 'São Paulo',
-      nomeRss: 'sao-paulo',
-      corTop: '0xFF8B0000',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFFFFFFFF',
-      emoji: '⚪',
-      teamId: 1776,
-      escudoAsset: 'assets/escudos/sao-paulo.png'),
-  'santos': TimeInfo(
-      nome: 'Santos',
-      nomeRss: 'santos',
-      corTop: '0xFF1a1a1a',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFFF5F5F5',
-      emoji: '⚪',
-      teamId: 6685,
-      escudoAsset: 'assets/escudos/santos.png'),
-  'atletico-mg': TimeInfo(
-      nome: 'Atlético-MG',
-      nomeRss: 'atletico-mg',
-      corTop: '0xFF1a1a1a',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFFFFD700',
-      emoji: '⚫',
-      teamId: 1766,
-      escudoAsset: 'assets/escudos/atletico-mg.png'),
-  'cruzeiro': TimeInfo(
-      nome: 'Cruzeiro',
-      nomeRss: 'cruzeiro',
-      corTop: '0xFF0a1628',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFFFFD700',
-      emoji: '🔵',
-      teamId: 1771,
-      escudoAsset: 'assets/escudos/cruzeiro.png'),
-  'internacional': TimeInfo(
-      nome: 'Internacional',
-      nomeRss: 'internacional',
-      corTop: '0xFF8B0000',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFFFFFFFF',
-      emoji: '🔴',
-      teamId: 6684,
-      escudoAsset: 'assets/escudos/internacional.png'),
-  'gremio': TimeInfo(
-      nome: 'Grêmio',
-      nomeRss: 'gremio',
-      corTop: '0xFF1a3a6e',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFF87CEEB',
-      emoji: '🔵',
-      teamId: 1767,
-      escudoAsset: 'assets/escudos/gremio.png'),
-  'vasco': TimeInfo(
-      nome: 'Vasco',
-      nomeRss: 'vasco-da-gama',
-      corTop: '0xFF1a1a1a',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFFFFFFFF',
-      emoji: '⚫',
-      teamId: 1780,
-      escudoAsset: 'assets/escudos/vasco.png'),
-  'botafogo': TimeInfo(
-      nome: 'Botafogo',
-      nomeRss: 'botafogo',
-      corTop: '0xFF1a1a1a',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFFFFFFFF',
-      emoji: '⚫',
-      teamId: 1770,
-      escudoAsset: 'assets/escudos/botafogo.png'),
-  'fluminense': TimeInfo(
-      nome: 'Fluminense',
-      nomeRss: 'fluminense',
-      corTop: '0xFF5C0A14',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFF8FBC8F',
-      emoji: '🔴',
-      teamId: 1765,
-      escudoAsset: 'assets/escudos/fluminense.png'),
-  'atletico-pr': TimeInfo(
-      nome: 'Athletico-PR',
-      nomeRss: 'atletico-pr',
-      corTop: '0xFF8B0000',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFF1a1a1a',
-      emoji: '🔴',
-      teamId: 1768,
-      escudoAsset: 'assets/escudos/atletico-pr.png'),
-  'bahia': TimeInfo(
-      nome: 'Bahia',
-      nomeRss: 'bahia',
-      corTop: '0xFF003087',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFFFFD700',
-      emoji: '🔵',
-      teamId: 1777,
-      escudoAsset: 'assets/escudos/bahia.png'),
-  'fortaleza': TimeInfo(
-      nome: 'Fortaleza',
-      nomeRss: 'fortaleza',
-      corTop: '0xFF003087',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFFFF0000',
-      emoji: '🔵',
-      teamId: 7315,
-      escudoAsset: 'assets/escudos/fortaleza.png'),
-  'ceara': TimeInfo(
-      nome: 'Ceará',
-      nomeRss: 'ceara',
-      corTop: '0xFF1a1a1a',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFF1a90d4',
-      emoji: '⚫',
-      teamId: 4690,
-      escudoAsset: 'assets/escudos/ceara.png'),
-  'bragantino': TimeInfo(
-      nome: 'Bragantino',
-      nomeRss: 'bragantino',
-      corTop: '0xFF8B0000',
-      corBottom: '0xFF000000',
-      corDestaque: '0xFFFFFFFF',
-      emoji: '🔴',
-      teamId: 4286,
-      escudoAsset: 'assets/escudos/bragantino.png'),
-};
-
-const Map<String, Map<String, String>> cidadesDisponiveis = {
-  'hortolandia': {'nome': 'Hortolândia', 'cor': '0xFF00BCD4'},
-  'campinas': {'nome': 'Campinas', 'cor': '0xFFFFD54F'},
-  'sumare': {'nome': 'Sumaré', 'cor': '0xFF80DEEA'},
-  'americana': {'nome': 'Americana', 'cor': '0xFFA5D6A7'},
-  'santa-barbara': {'nome': "Sta. Bárbara d'Oeste", 'cor': '0xFFCE93D8'},
-  'indaiatuba': {'nome': 'Indaiatuba', 'cor': '0xFFFFAB91'},
-  'paulinia': {'nome': 'Paulínia', 'cor': '0xFFF48FB1'},
-};
-
-const List<Map<String, String>> fontesDisponiveis = [
-  {'key': 'Poppins', 'label': 'Poppins', 'preview': 'Aa'},
-  {'key': 'Rajdhani', 'label': 'Rajdhani', 'preview': 'Aa'},
-  {'key': 'Orbitron', 'label': 'Orbitron', 'preview': 'Aa'},
-  {'key': 'Roboto', 'label': 'Roboto', 'preview': 'Aa'},
-];
 
 class TelaConfig extends StatefulWidget {
   final VoidCallback aoSalvar;
@@ -317,6 +127,7 @@ class _TelaConfigState extends State<TelaConfig>
     'regiao': '📍 Notícias Região',
     'fotos': '📷 Fotos',
     'bom_dia': '🌅 Bom Dia',
+    'noite': '🌙 Modo Noite',
     'barra_info': '📊 Barra de Informações',
     'spotify': '🎵 Spotify',
     'performance': '⚡ Performance',
@@ -338,7 +149,12 @@ class _TelaConfigState extends State<TelaConfig>
     super.dispose();
   }
 
+  late final String _latLonInicial = _latLonAtual;
+  String get _latLonAtual =>
+      '${config.getString('clima', 'lat')},${config.getString('clima', 'lon')}';
+
   void _carregarEstadoLocal() {
+    _latLonInicial; // fixa a localização de quando a tela abriu
     final tk = config.getString('time', 'time_key', 'palmeiras');
     if (timesDisponiveis.containsKey(tk)) _timeSelecionado = tk;
     _cidadesSelecionadas =
@@ -506,7 +322,7 @@ class _TelaConfigState extends State<TelaConfig>
                   _carregarEstadoLocal();
                   if (!mounted) return;
                   setState(() {});
-                  _showSnack(context, '🔄 Configurações resetadas!');
+                  _showSnack(this.context, '🔄 Configurações resetadas!');
                 }),
             const SizedBox(width: 10),
           ],
@@ -521,7 +337,7 @@ class _TelaConfigState extends State<TelaConfig>
                 _carregarEstadoLocal();
                 if (!mounted) return;
                 setState(() {});
-                _showSnack(context, '🔄 Configurações resetadas!');
+                _showSnack(this.context, '🔄 Configurações resetadas!');
               },
             ),
           ],
@@ -575,6 +391,9 @@ class _TelaConfigState extends State<TelaConfig>
         config.set(
             'brasil', 'categorias_selecionadas', _categoriasBrasilSelecionadas);
         await config.salvar();
+        if (_latLonInicial != _latLonAtual) {
+          WeatherService.instance.localizacaoMudou();
+        }
         widget.aoSalvar();
       },
       child: Container(
@@ -708,15 +527,17 @@ class _TelaConfigState extends State<TelaConfig>
         case 'compras':
           return _buildComprasConfig();
         case 'proxima_partida':
-          return _buildCamposGenericos('proxima_partida', 'proxima_partida');
+          return _buildProximaPartidaConfig();
         case 'classificacao':
-          return _buildCamposGenericos('classificacao', 'classificacao');
+          return _buildClassificacaoConfig();
         case 'brasil':
           return _buildBrasilConfig();
         case 'fotos':
           return _buildFotosConfig();
         case 'bom_dia':
           return _buildBomDiaConfig();
+        case 'noite':
+          return _buildNoiteConfig();
         case 'barra_info':
           return _buildBarraInfoConfig();
         case 'spotify':
@@ -899,6 +720,7 @@ class _TelaConfigState extends State<TelaConfig>
 
   bool _selecionandoFotos = false;
   int? _fotosAdicionadas;
+  int? _totalFotos;
 
   Future<void> _selecionarFotosConfig() async {
     setState(() {
@@ -906,27 +728,9 @@ class _TelaConfigState extends State<TelaConfig>
       _fotosAdicionadas = null;
     });
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        allowMultiple: true,
-      );
-      if (result != null) {
-        final pastaDestino =
-            Directory('/storage/emulated/0/Pictures/MlionDroid');
-        if (!await pastaDestino.exists()) {
-          await pastaDestino.create(recursive: true);
-        }
-        int copiadas = 0;
-        for (var file in result.files) {
-          if (file.path != null) {
-            final origem = File(file.path!);
-            final destino = File('${pastaDestino.path}/${file.name}');
-            await origem.copy(destino.path);
-            copiadas++;
-          }
-        }
-        setState(() => _fotosAdicionadas = copiadas);
-      }
+      final n = await FotosService.instance.adicionarDoSeletor();
+      _fotosAdicionadas = n;
+      _totalFotos = (await FotosService.instance.listar()).length;
     } catch (e) {
       debugPrint('Erro ao selecionar fotos (config): $e');
     } finally {
@@ -935,21 +739,24 @@ class _TelaConfigState extends State<TelaConfig>
   }
 
   Widget _buildFotosConfig() {
+    if (_totalFotos == null) {
+      FotosService.instance.listar().then((l) {
+        if (mounted) setState(() => _totalFotos = l.length);
+      });
+    }
     return ListView(
       padding: const EdgeInsets.all(28),
       children: [
-        _sectionTitle('📷 Tela de Fotos'),
+        _sectionTitle('📷 Memórias (fotos)'),
         const SizedBox(height: 20),
         _glassCard(children: [
-          Row(children: [
-            Icon(Icons.photo_library_rounded, color: _accent, size: 16),
-            const SizedBox(width: 8),
-            Text('Fotos exibidas',
-                style: GoogleFonts.poppins(
-                    color: Colors.white70,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600)),
-          ]),
+          Text(
+            _totalFotos == null
+                ? 'Contando fotos...'
+                : '$_totalFotos foto(s) nas Memórias',
+            style: GoogleFonts.poppins(
+                color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
+          ),
           const SizedBox(height: 12),
           GestureDetector(
             onTap: _selecionandoFotos ? null : _selecionarFotosConfig,
@@ -974,7 +781,7 @@ class _TelaConfigState extends State<TelaConfig>
                     const Icon(Icons.add_photo_alternate_rounded,
                         color: _accent, size: 20),
                   const SizedBox(width: 10),
-                  Text('Selecionar fotos do armazenamento',
+                  Text('Adicionar fotos',
                       style: GoogleFonts.poppins(
                           color: _accent,
                           fontSize: 15,
@@ -985,22 +792,25 @@ class _TelaConfigState extends State<TelaConfig>
           ),
           if (_fotosAdicionadas != null) ...[
             const SizedBox(height: 8),
-            Text('$_fotosAdicionadas foto(s) adicionada(s) com sucesso.',
+            Text('$_fotosAdicionadas foto(s) adicionada(s).',
                 style: GoogleFonts.poppins(
                     color: Colors.greenAccent, fontSize: 13)),
           ],
           const SizedBox(height: 6),
           Text(
-            'As fotos escolhidas ficam salvas no app e entram no rodízio '
-            'da tela de Memórias. Mesma seleção disponível direto na tela '
-            'de Fotos, tocando em "Galeria".',
+            'As fotos são copiadas para dentro do app (não precisa de '
+            'permissão de armazenamento) e entram no slideshow das Memórias '
+            'e na "Recordação do dia" da tela Bom Dia.',
             style: GoogleFonts.poppins(color: Colors.white54, fontSize: 12),
           ),
         ]),
         const SizedBox(height: 20),
         _glassCard(children: [
           _sliderInt('fotos', 'duracao_por_foto_seg', 'Segundos por foto',
-              config.getInt('fotos', 'duracao_por_foto_seg', 8), 1, 60),
+              config.getInt('fotos', 'duracao_por_foto_seg', 8), 3, 60,
+              unidade: 's'),
+          _sliderInt('fotos', 'fotos_por_visita', 'Fotos por passagem na tela',
+              config.getInt('fotos', 'fotos_por_visita', 4), 1, 20),
         ]),
       ],
     );
@@ -1046,6 +856,45 @@ class _TelaConfigState extends State<TelaConfig>
           _sliderInt('geral', 'pausa_preta_ms', 'Pausa entre telas',
               config.getInt('geral', 'pausa_preta_ms', 300), 0, 1000,
               unidade: 'ms'),
+          _sliderInt(
+              'geral',
+              'tempo_modo_manual',
+              'Depois de tocar na tela, voltar ao automático em',
+              config.getInt('geral', 'tempo_modo_manual', 45),
+              10,
+              300,
+              unidade: 's'),
+          _toggleConfig(
+            titulo: 'Manter a tela sempre ligada',
+            subtitulo:
+                'Impede que o tablet apague a tela sozinho enquanto o app está aberto',
+            categoria: 'geral',
+            chave: 'manter_tela_ligada',
+            valorPadrao: true,
+          ),
+        ]),
+        const SizedBox(height: 16),
+        _glassCard(children: [
+          Text('Dados guardados',
+              style: GoogleFonts.poppins(
+                  color: Colors.white70, fontSize: 15, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          Text(
+            'O app guarda clima, notícias e jogos para mostrar algo mesmo sem '
+            'internet. Use o botão abaixo se algum dado parecer travado.',
+            style: GoogleFonts.poppins(color: Colors.white54, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () async {
+              await CacheManager.instance.limparTudo();
+              if (!mounted) return;
+              _showSnack(context, 'Dados apagados — tudo será buscado de novo.');
+            },
+            icon: const Icon(Icons.refresh_rounded, color: _accent),
+            label: Text('Forçar atualização de todos os dados',
+                style: GoogleFonts.poppins(color: _accent)),
+          ),
         ]),
         const SizedBox(height: 24),
         _sectionTitle('🎬 Tipo de Transição'),
@@ -1190,7 +1039,6 @@ class _TelaConfigState extends State<TelaConfig>
         ),
         const SizedBox(height: 20),
         _glassCard(children: [
-          _fontePicker('palmeiras', 'fonte'),
           _sliderInt('palmeiras', 'qtd_noticias', 'Quantidade de notícias',
               config.getInt('palmeiras', 'qtd_noticias', 8), 2, 30),
           _sliderInt(
@@ -1224,7 +1072,7 @@ class _TelaConfigState extends State<TelaConfig>
         const SizedBox(height: 20),
         _glassCard(children: [
           Row(children: [
-            Icon(Icons.location_on_rounded, color: _accent, size: 16),
+            const Icon(Icons.location_on_rounded, color: _accent, size: 16),
             const SizedBox(width: 8),
             Text('Localização',
                 style: GoogleFonts.poppins(
@@ -1262,7 +1110,7 @@ class _TelaConfigState extends State<TelaConfig>
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   else
-                    Icon(Icons.edit_rounded, color: _accent, size: 18),
+                    const Icon(Icons.edit_rounded, color: _accent, size: 18),
                 ],
               ),
             ),
@@ -1288,14 +1136,6 @@ class _TelaConfigState extends State<TelaConfig>
     );
   }
 
-  static const Map<String, String> _categoriasBrasilLabels = {
-    'politica': 'Política',
-    'economia': 'Economia',
-    'tecnologia': 'Tecnologia',
-    'saude': 'Saúde',
-    'geral': 'Geral',
-  };
-
   Widget _buildBrasilConfig() {
     return ListView(
       padding: const EdgeInsets.all(28),
@@ -1305,7 +1145,7 @@ class _TelaConfigState extends State<TelaConfig>
         Wrap(
           spacing: 10,
           runSpacing: 10,
-          children: _categoriasBrasilLabels.entries.map((e) {
+          children: categoriasBrasil.entries.map((e) {
             final sel = _categoriasBrasilSelecionadas.contains(e.key);
             return GestureDetector(
               onTap: () {
@@ -1322,7 +1162,7 @@ class _TelaConfigState extends State<TelaConfig>
                     color: sel ? Colors.white12 : Colors.transparent,
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: sel ? _accent : _border)),
-                child: Text(e.value,
+                child: Text(e.value.nome,
                     style: GoogleFonts.poppins(
                         color: sel ? _accent : Colors.white70)),
               ),
@@ -1363,7 +1203,7 @@ class _TelaConfigState extends State<TelaConfig>
         Wrap(
           spacing: 10,
           runSpacing: 10,
-          children: cidadesDisponiveis.entries.map((e) {
+          children: cidadesRegiao.entries.map((e) {
             final sel = _cidadesSelecionadas.contains(e.key);
             return GestureDetector(
               onTap: () {
@@ -1380,7 +1220,7 @@ class _TelaConfigState extends State<TelaConfig>
                     color: sel ? Colors.white12 : Colors.transparent,
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: sel ? _accent : _border)),
-                child: Text(e.value['nome']!,
+                child: Text(e.value.nome,
                     style: GoogleFonts.poppins(
                         color: sel ? _accent : Colors.white60)),
               ),
@@ -1412,15 +1252,70 @@ class _TelaConfigState extends State<TelaConfig>
     );
   }
 
+  /// Conta Google usada por Calendário e Compras. A janela de login só abre
+  /// por aqui — durante o rodízio o app nunca pede login.
+  Widget _cartaoContaGoogle() {
+    return ListenableBuilder(
+      listenable: GoogleAuthService.instance,
+      builder: (context, _) {
+        final auth = GoogleAuthService.instance;
+        final conta = auth.conta;
+        return _glassCard(children: [
+          Row(children: [
+            Icon(conta != null ? Icons.verified_user_rounded : Icons.account_circle_outlined,
+                color: conta != null ? Colors.greenAccent : Colors.orangeAccent, size: 26),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(conta != null ? 'Conta Google conectada' : 'Conta Google não conectada',
+                      style: GoogleFonts.poppins(
+                          color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+                  Text(
+                      conta?.email ??
+                          'Necessária para Calendário (Google Agenda) e Lista de Compras (Google Tasks).',
+                      style: GoogleFonts.poppins(color: Colors.white60, fontSize: 13)),
+                ],
+              ),
+            ),
+          ]),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                if (conta != null) {
+                  await auth.desconectar();
+                } else {
+                  final ok = await auth.conectar();
+                  if (!mounted) return;
+                  _showSnack(this.context, ok ? 'Conta conectada!' : 'Login cancelado.');
+                }
+              },
+              icon: Icon(conta != null ? Icons.logout_rounded : Icons.login_rounded,
+                  color: _accent),
+              label: Text(conta != null ? 'Desconectar' : 'Conectar conta Google',
+                  style: GoogleFonts.poppins(color: _accent, fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ]);
+      },
+    );
+  }
+
   Widget _buildCalendarioConfig() {
     return ListView(
       padding: const EdgeInsets.all(28),
       children: [
         _sectionTitle('📅 Calendário'),
         const SizedBox(height: 20),
+        _cartaoContaGoogle(),
+        const SizedBox(height: 16),
         _glassCard(children: [
           _sliderInt('calendario', 'duracao_seg', 'Tempo na tela',
-              config.getInt('calendario', 'duracao_seg', 35), 10, 120),
+              config.getInt('calendario', 'duracao_seg', 35), 10, 120,
+              unidade: 's'),
           _intervaloPicker('calendario'),
         ]),
       ],
@@ -1433,10 +1328,123 @@ class _TelaConfigState extends State<TelaConfig>
       children: [
         _sectionTitle('🛒 Compras'),
         const SizedBox(height: 20),
+        _cartaoContaGoogle(),
+        const SizedBox(height: 16),
         _glassCard(children: [
+          Text(
+            'A tela usa a lista do Google Tasks chamada "Compras" (ou '
+            '"Mercado", "Supermercado", "Feira"). Tocar num item marca como '
+            'comprado — com 5 segundos para desfazer.',
+            style: GoogleFonts.poppins(color: Colors.white60, fontSize: 13),
+          ),
+          const SizedBox(height: 16),
           _sliderInt('compras', 'duracao_seg', 'Tempo na tela',
-              config.getInt('compras', 'duracao_seg', 30), 10, 120),
+              config.getInt('compras', 'duracao_seg', 30), 10, 120,
+              unidade: 's'),
           _intervaloPicker('compras'),
+        ]),
+      ],
+    );
+  }
+
+  Widget _buildProximaPartidaConfig() {
+    return ListView(
+      padding: const EdgeInsets.all(28),
+      children: [
+        _sectionTitle('🏟️ Próxima Partida'),
+        const SizedBox(height: 20),
+        _glassCard(children: [
+          _sliderInt('proxima_partida', 'duracao_seg', 'Tempo na tela',
+              config.getInt('proxima_partida', 'duracao_seg', 20), 5, 120,
+              unidade: 's'),
+          _toggleConfig(
+            titulo: 'Mostrar onde assistir',
+            subtitulo:
+                'Canais de TV/streaming do jogo (aparecem no dia e na véspera, '
+                'lidos da programação pública do futebolnatv.com.br)',
+            categoria: 'proxima_partida',
+            chave: 'mostrar_canais',
+            valorPadrao: true,
+          ),
+          const SizedBox(height: 16),
+          _intervaloPicker('proxima_partida'),
+        ]),
+      ],
+    );
+  }
+
+  Widget _buildClassificacaoConfig() {
+    return ListView(
+      padding: const EdgeInsets.all(28),
+      children: [
+        _sectionTitle('🏆 Classificação'),
+        const SizedBox(height: 20),
+        _glassCard(children: [
+          _sliderInt('classificacao', 'scroll_velocidade', 'Velocidade da rolagem',
+              config.getInt('classificacao', 'scroll_velocidade', 30), 10, 120,
+              unidade: 'px/s'),
+          _sliderInt('classificacao', 'pausa_troca_seg', 'Pausa ao final de cada tabela',
+              config.getInt('classificacao', 'pausa_troca_seg', 3), 1, 30,
+              unidade: 's'),
+          _toggleConfig(
+            titulo: 'Mostrar Libertadores',
+            subtitulo: 'Depois do Brasileirão, mostra os grupos da Libertadores',
+            categoria: 'classificacao',
+            chave: 'mostrar_libertadores',
+            valorPadrao: true,
+          ),
+          const SizedBox(height: 16),
+          _intervaloPicker('classificacao'),
+        ]),
+      ],
+    );
+  }
+
+  Widget _buildNoiteConfig() {
+    final inicio = config.getInt('noite', 'hora_inicio', 23);
+    final fim = config.getInt('noite', 'hora_fim', 6);
+    return ListView(
+      padding: const EdgeInsets.all(28),
+      children: [
+        _sectionTitle('🌙 Modo Noite'),
+        const SizedBox(height: 8),
+        Text(
+          'De madrugada o painel troca o rodízio por um relógio grande e '
+          'escuro, e reduz o brilho da tela. Tocar na tela acorda o painel '
+          'por 10 minutos.',
+          style: GoogleFonts.poppins(color: Colors.white54, fontSize: 13),
+        ),
+        const SizedBox(height: 16),
+        _glassCard(children: [
+          _toggleConfig(
+            titulo: 'Ativar Modo Noite',
+            subtitulo: 'Relógio escuro + brilho reduzido no horário abaixo',
+            categoria: 'noite',
+            chave: 'ativo',
+            valorPadrao: true,
+          ),
+          const Divider(color: Colors.white10, height: 28),
+          Row(children: [
+            Expanded(
+                child: Text('Começa às',
+                    style: GoogleFonts.poppins(color: Colors.white70, fontSize: 15))),
+            _horaPicker(
+                valor: inicio,
+                min: 0,
+                max: 23,
+                onChanged: (v) => setState(() => config.set('noite', 'hora_inicio', v))),
+          ]),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+                child: Text('Termina às',
+                    style: GoogleFonts.poppins(color: Colors.white70, fontSize: 15))),
+            _horaPicker(
+                valor: fim,
+                min: 0,
+                max: 23,
+                onChanged: (v) => setState(() => config.set('noite', 'hora_fim', v))),
+          ]),
         ]),
       ],
     );
@@ -1578,111 +1586,6 @@ class _TelaConfigState extends State<TelaConfig>
           ),
         ]),
         const SizedBox(height: 28),
-        _sectionTitle('🎤 Letras das músicas (Genius)'),
-        const SizedBox(height: 14),
-        Builder(builder: (context) {
-          final temToken =
-              config.getString('spotify', 'genius_token', '').isNotEmpty;
-          return Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: (temToken ? const Color(0xFF1DB954) : Colors.orange)
-                  .withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                  color: (temToken ? const Color(0xFF1DB954) : Colors.orange)
-                      .withValues(alpha: 0.30)),
-            ),
-            child: Row(children: [
-              Icon(temToken ? Icons.lyrics_rounded : Icons.lyrics_outlined,
-                  color: temToken ? const Color(0xFF1DB954) : Colors.orange,
-                  size: 26),
-              const SizedBox(width: 12),
-              Expanded(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                    Text(temToken ? '✓ Letras ativadas' : 'Letras desativadas',
-                        style: GoogleFonts.poppins(
-                            color: temToken
-                                ? const Color(0xFF1DB954)
-                                : Colors.orange,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700)),
-                    Text(
-                        temToken
-                            ? 'As letras aparecem automaticamente na tela do Spotify'
-                            : 'Configure o token abaixo para ativar',
-                        style: GoogleFonts.poppins(
-                            color: Colors.white60, fontSize: 12)),
-                  ])),
-            ]),
-          );
-        }),
-        const SizedBox(height: 16),
-        _glassCard(children: [
-          Row(children: [
-            const Icon(Icons.info_outline_rounded,
-                color: Color(0xFFFFD700), size: 16),
-            const SizedBox(width: 8),
-            Text('Como obter o Genius Token (grátis)',
-                style: GoogleFonts.poppins(
-                    color: const Color(0xFFFFD700),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700)),
-          ]),
-          const SizedBox(height: 12),
-          _instrucaoStep(
-              '1', 'Abra o navegador e acesse: genius.com/api-clients'),
-          _instrucaoStep(
-              '2', 'Crie uma conta gratuita ou faça login com Google'),
-          _instrucaoStep('3', 'Clique em "New API Client"'),
-          _instrucaoStep(
-              '4', 'Nome = MlionDroid | App Website URL = http://localhost'),
-          _instrucaoStep(
-              '5', 'Clique em "Save" — vai aparecer o "Client Access Token"'),
-          _instrucaoStep('6', 'Copie o token e cole no campo abaixo e salve'),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: () async {
-              final url = Uri.parse('https://genius.com/api-clients');
-              if (await canLaunchUrl(url)) {
-                await launchUrl(url, mode: LaunchMode.externalApplication);
-              }
-            },
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFD700).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: const Color(0xFFFFD700).withValues(alpha: 0.40)),
-              ),
-              child:
-                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                const Icon(Icons.open_in_browser_rounded,
-                    color: Color(0xFFFFD700), size: 18),
-                const SizedBox(width: 8),
-                Text('ABRIR GENIUS.COM/API-CLIENTS',
-                    style: GoogleFonts.poppins(
-                        color: const Color(0xFFFFD700),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.4)),
-              ]),
-            ),
-          ),
-          const SizedBox(height: 16),
-          _textFieldConfig(
-            'spotify',
-            'genius_token',
-            'Genius Token (Client Access Token)',
-            'Cole aqui o token copiado do Genius',
-            Icons.lyrics_rounded,
-          ),
-        ]),
-        const SizedBox(height: 24),
         _sectionTitle('⚙️ Comportamento'),
         const SizedBox(height: 14),
         _glassCard(children: [
@@ -1926,7 +1829,7 @@ class _TelaConfigState extends State<TelaConfig>
         const SizedBox(width: 12),
         Switch(
           value: valor,
-          activeColor: cor,
+          activeThumbColor: cor,
           onChanged: (v) {
             setState(() {
               config.set(categoria, chave, v);
@@ -1967,74 +1870,6 @@ class _TelaConfigState extends State<TelaConfig>
     );
   }
 
-  final Set<String> _categoriasComIntervalo = {
-    'proxima_partida',
-    'classificacao',
-    'brasil',
-  };
-
-  Widget _buildCamposGenericos(String categoria, String telaKey) {
-    final campos = _camposPorCategoria[telaKey] ?? [];
-    return ListView(
-      padding: const EdgeInsets.all(28),
-      children: [
-        _sectionTitle(categoria),
-        const SizedBox(height: 20),
-        _glassCard(children: [
-          ...campos.map((c) {
-            if (c['tipo'] == 'int') {
-              return _sliderInt(
-                  categoria,
-                  c['chave'] as String,
-                  c['label'] as String,
-                  config.getInt(categoria, c['chave'] as String,
-                      (c['min'] as num).toInt()),
-                  (c['min'] as num).toInt(),
-                  (c['max'] as num).toInt());
-            }
-            if (c['tipo'] == 'cor') {
-              return _corPicker(
-                  categoria, c['chave'] as String, c['label'] as String);
-            }
-            return const SizedBox.shrink();
-          }),
-          if (_categoriasComIntervalo.contains(categoria))
-            _intervaloPicker(categoria),
-        ]),
-      ],
-    );
-  }
-
-  final Map<String, List<Map<String, dynamic>>> _camposPorCategoria = {
-    'proxima_partida': [
-      {
-        'chave': 'duracao_seg',
-        'label': 'Tempo na tela',
-        'tipo': 'int',
-        'min': 5,
-        'max': 60
-      }
-    ],
-    'classificacao': [
-      {
-        'chave': 'scroll_velocidade',
-        'label': 'Velocidade',
-        'tipo': 'int',
-        'min': 1,
-        'max': 10
-      }
-    ],
-    'fotos': [
-      {
-        'chave': 'duracao_por_foto_seg',
-        'label': 'Segundos',
-        'tipo': 'int',
-        'min': 1,
-        'max': 60
-      }
-    ],
-  };
-
   Widget _textFieldConfig(
     String categoria,
     String chave,
@@ -2042,8 +1877,6 @@ class _TelaConfigState extends State<TelaConfig>
     String hint,
     IconData icone,
   ) {
-    final ctrl =
-        TextEditingController(text: config.getString(categoria, chave, ''));
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Column(
@@ -2059,8 +1892,12 @@ class _TelaConfigState extends State<TelaConfig>
                     fontWeight: FontWeight.w600)),
           ]),
           const SizedBox(height: 8),
-          TextField(
-            controller: ctrl,
+          TextFormField(
+            // initialValue + key estável: o campo mantém o próprio estado.
+            // Antes um TextEditingController novo era criado a cada
+            // redesenho (vazava memória e o cursor pulava).
+            key: ValueKey('campo_${categoria}_$chave'),
+            initialValue: config.getString(categoria, chave, ''),
             style: GoogleFonts.poppins(color: Colors.white, fontSize: 16),
             decoration: InputDecoration(
               hintText: hint,
@@ -2070,15 +1907,15 @@ class _TelaConfigState extends State<TelaConfig>
               fillColor: Colors.white.withValues(alpha: 0.06),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: _border),
+                borderSide: const BorderSide(color: _border),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: _border),
+                borderSide: const BorderSide(color: _border),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: _accent),
+                borderSide: const BorderSide(color: _accent),
               ),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -2186,7 +2023,7 @@ class _TelaConfigState extends State<TelaConfig>
                   ),
                   Switch(
                     value: perf.modoEconomico,
-                    activeColor: Colors.amberAccent,
+                    activeThumbColor: Colors.amberAccent,
                     onChanged: (v) => perf.definirModoEconomico(v),
                   ),
                 ],
@@ -2438,40 +2275,22 @@ class _TelaConfigState extends State<TelaConfig>
     return '$h:$m';
   }
 
-  Widget _fontePicker(String cat, String chave) {
-    return Column(
-      children: [
-        Text('Fonte', style: GoogleFonts.poppins(color: Colors.white70)),
-        Wrap(
-          spacing: 8,
-          children: fontesDisponiveis.map((f) {
-            return GestureDetector(
-              onTap: () => setState(() => config.set(cat, chave, f['key'])),
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                    border: Border.all(color: _border),
-                    borderRadius: BorderRadius.circular(8)),
-                child: Text(f['label']!),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
   Widget _sliderInt(
       String cat, String chave, String label, int valor, int min, int max,
       {String unidade = ''}) {
     return Column(
       children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text(label, style: GoogleFonts.poppins(color: Colors.white70)),
-          Text('$valor $unidade', style: GoogleFonts.poppins(color: _accent)),
+          Flexible(
+              child: Text(label, style: GoogleFonts.poppins(color: Colors.white70))),
+          Text('${valor.clamp(min, max)} $unidade',
+              style: GoogleFonts.poppins(color: _accent)),
         ]),
         Slider(
-            value: valor.toDouble(),
+            // clamp: valores antigos salvos fora da faixa travavam o Slider.
+            value: valor.clamp(min, max).toDouble(),
+            divisions: (max - min) > 0 && (max - min) <= 200 ? max - min : null,
+            activeColor: _accent,
             min: min.toDouble(),
             max: max.toDouble(),
             onChanged: (v) =>
@@ -2757,7 +2576,7 @@ class _TelaConfigState extends State<TelaConfig>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(children: [
-          Icon(Icons.update_rounded, color: _accent, size: 16),
+          const Icon(Icons.update_rounded, color: _accent, size: 16),
           const SizedBox(width: 8),
           Text('Atualizar dados a cada',
               style: GoogleFonts.poppins(
@@ -2797,60 +2616,6 @@ class _TelaConfigState extends State<TelaConfig>
           }).toList(),
         ),
         const SizedBox(height: 20),
-      ],
-    );
-  }
-
-  Widget _corPicker(String cat, String chave, String label) {
-    const coresHex = [
-      {'cor': Color(0xFFFF0000), 'hex': '0xFFFF0000'},
-      {'cor': Color(0xFF00C853), 'hex': '0xFF00C853'},
-      {'cor': Color(0xFF2196F3), 'hex': '0xFF2196F3'},
-    ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: GoogleFonts.poppins(color: Colors.white70)),
-        Wrap(
-          spacing: 8,
-          children: coresHex.map((entry) {
-            final cor = entry['cor'] as Color;
-            final hexStr = entry['hex'] as String;
-            return GestureDetector(
-              onTap: () => setState(() => config.set(cat, chave, hexStr)),
-              child: Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: cor,
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 20),
-      ],
-    );
-  }
-
-  Widget _campoTexto(
-      {required String label,
-      required String valor,
-      required String placeholder,
-      required ValueChanged<String> onChanged}) {
-    return Column(
-      children: [
-        Text(label, style: GoogleFonts.poppins(color: Colors.white70)),
-        TextFormField(
-            initialValue: valor,
-            onChanged: onChanged,
-            decoration: InputDecoration(
-                hintText: placeholder,
-                filled: true,
-                fillColor: Colors.white10,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12)))),
       ],
     );
   }
@@ -3072,7 +2837,7 @@ class _TelaConfigState extends State<TelaConfig>
         const SizedBox(height: 14),
         ...fontesDisponiveis2.map((f) {
           final sel = fonteAtual == f['key'];
-          TextStyle _sample(String fk) {
+          TextStyle sample(String fk) {
             switch (fk) {
               case 'rajdhani':
                 return GoogleFonts.poppins(
@@ -3124,15 +2889,15 @@ class _TelaConfigState extends State<TelaConfig>
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(f['label']! as String,
+                        Text(f['label']!,
                             style: GoogleFonts.poppins(
                                 color: sel ? _accent : Colors.white70,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: 0.6)),
                         const SizedBox(height: 4),
-                        Text(f['sample']! as String,
-                            style: _sample(f['key']! as String)),
+                        Text(f['sample']!,
+                            style: sample(f['key']!)),
                       ]),
                 ),
                 if (sel)
@@ -3308,8 +3073,7 @@ class _TelaConfigState extends State<TelaConfig>
             _resumoLinha(
                 'Fonte',
                 fontesDisponiveis2.firstWhere((f) => f['key'] == fonteAtual,
-                            orElse: () => {'label': fonteAtual})['label']
-                        as String? ??
+                            orElse: () => {'label': fonteAtual})['label'] ??
                     fonteAtual),
             _resumoLinha('Nome', '${tamanhoNome.round()}px'),
             _resumoLinha('Temp.', '${tamanhoTemp.round()}px'),
@@ -3517,8 +3281,7 @@ class _WebViewLoginOverlayState extends State<_WebViewLoginOverlay> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                 child: Row(children: [
-                  Image.asset('assets/icons/spotify_logo.png',
-                      width: 24, height: 24),
+                  const Icon(Icons.music_note_rounded, color: Color(0xFF1DB954), size: 24),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Text(

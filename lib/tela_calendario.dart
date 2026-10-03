@@ -1,18 +1,19 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/calendar/v3.dart' as cal;
 import 'package:googleapis/tasks/v1.dart' as tasks;
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
-import 'dart:async';
-import 'dart:ui';
-import 'dart:math' as math;
-import 'config_manager.dart';
+
 import 'cache_manager.dart';
-import 'responsive.dart';
+import 'config_manager.dart';
 import 'performance_manager.dart';
+import 'responsive.dart';
+import 'services/google_auth_service.dart';
 
 // ─── MODELOS ──────────────────────────────────────────────────────────────────
 enum TipoItem { evento, tarefa }
@@ -24,6 +25,7 @@ class ItemAgenda {
   final String? horario;
   final TipoItem tipo;
   final DateTime? dataHora;
+  final bool semData; // tarefa sem data: aparece em "Hoje" como lembrete
   bool concluido;
 
   ItemAgenda({
@@ -34,6 +36,7 @@ class ItemAgenda {
     this.horario,
     this.dataHora,
     this.concluido = false,
+    this.semData = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -44,6 +47,7 @@ class ItemAgenda {
         'tipo': tipo == TipoItem.evento ? 'evento' : 'tarefa',
         'dataHora': dataHora?.toIso8601String(),
         'concluido': concluido,
+        'semData': semData,
       };
 
   factory ItemAgenda.fromJson(Map<String, dynamic> j) => ItemAgenda(
@@ -56,19 +60,8 @@ class ItemAgenda {
             ? DateTime.tryParse(j['dataHora'] as String)
             : null,
         concluido: j['concluido'] as bool? ?? false,
+        semData: j['semData'] as bool? ?? false,
       );
-}
-
-// ─── CLIENTE HTTP ─────────────────────────────────────────────────────────────
-class _AuthClient extends http.BaseClient {
-  final Map<String, String> _h;
-  final http.Client _inner = http.Client();
-  _AuthClient(this._h);
-  @override
-  Future<http.StreamedResponse> send(http.BaseRequest r) {
-    r.headers.addAll(_h);
-    return _inner.send(r);
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -89,29 +82,17 @@ class _TelaCalendarioState extends State<TelaCalendario>
   List<ItemAgenda> _itensHoje = [];
   List<ItemAgenda> _itensAmanha = [];
   bool _carregando = true;
+  bool _semConta = false;
   String _statusMsg = 'Conectando ao Google...';
-
-  // ── LISTAS DE COMPRAS — ignoradas no calendário ───────────────────────────
-  static const _nomesCompras = [
-    'compras',
-    'compra',
-    'lista de compras',
-    'shopping',
-    'shopping list',
-    'mercado',
-    'supermercado',
-  ];
+  DateTime? _atualizadoEm;
 
   // ── DIA SELECIONADO ───────────────────────────────────────────────────────
   DateTime? _diaSelecionado;
   Timer? _diaTimer;
 
   // ── AUTH ──────────────────────────────────────────────────────────────────
-  _AuthClient? _client;
-  final _googleSignIn = GoogleSignIn(scopes: [
-    cal.CalendarApi.calendarReadonlyScope,
-    tasks.TasksApi.tasksScope,
-  ]);
+  http.Client? _client;
+  Timer? _antiTravamento;
 
   // ── CONTROLLERS ───────────────────────────────────────────────────────────
   final ScrollController _scrollHoje = ScrollController();
@@ -171,7 +152,7 @@ class _TelaCalendarioState extends State<TelaCalendario>
     _autenticarECarregar();
 
     // Anti-travamento
-    Timer(const Duration(minutes: 2), () {
+    _antiTravamento = Timer(const Duration(minutes: 2), () {
       if (mounted) widget.aoTerminar();
     });
   }
@@ -188,175 +169,148 @@ class _TelaCalendarioState extends State<TelaCalendario>
     _scrollHoje.dispose();
     _scrollAmanha.dispose();
     _scrollDia.dispose();
+    _antiTravamento?.cancel();
+    _client?.close();
     super.dispose();
   }
 
   // ── AUTH + CARREGAMENTO ───────────────────────────────────────────────────
-  static const _chaveCache = 'calendario_itens';
+  static const _chaveCache = 'calendario_itens_v2';
+
+  int get _duracaoSeg => _cfg.getInt('calendario', 'duracao_seg', 35).clamp(10, 300);
 
   Future<void> _autenticarECarregar() async {
-    try {
-      setState(() => _statusMsg = 'Autenticando...');
-      final conta =
-          await _googleSignIn.signInSilently() ?? await _googleSignIn.signIn();
-      if (conta == null) {
-        setState(() {
-          _carregando = false;
-          _statusMsg = 'Login cancelado';
-        });
-        _iniciarSaida(10);
-        return;
-      }
-      // Mantém o _client sempre pronto, mesmo em cache hit — é ele que
-      // permite marcar tarefa como concluída direto na tela.
-      _client = _AuthClient(await conta.authHeaders);
+    // Login SILENCIOSO apenas — a janela de escolher conta só abre pelo
+    // botão "Conectar conta Google" nas Configurações.
+    _client = await GoogleAuthService.instance.cliente();
 
-      // Tenta usar o cache antes de fazer as buscas pesadas (evento + tarefas
-      // de cada lista). Isso é o que normalmente demora nessa tela.
-      final cache = await CacheManager.instance.obter<Map<String, dynamic>>(
-        _chaveCache,
-        validade: _cfg.getIntervaloAtualizacao('calendario'),
-      );
-      if (cache != null && mounted) {
-        _itensPorDia.clear();
-        cache.forEach((chaveIso, lista) {
-          final dia = DateTime.parse(chaveIso);
-          _itensPorDia[dia] = (lista as List)
-              .map((e) => ItemAgenda.fromJson(Map<String, dynamic>.from(e)))
-              .toList();
-        });
-        setState(() => _carregando = false);
-        _rebuild();
-        _iniciarScrolls();
-        _iniciarSaida(35);
-        return;
-      }
+    // Mostra o que estiver no cache na hora (mesmo vencido), e atualiza
+    // por cima se o cache estiver velho.
+    final cache = await CacheManager.instance
+        .obterEntrada<Map<String, dynamic>>(_chaveCache);
+    if (!mounted) return;
+    if (cache != null) _aplicarCache(cache);
 
-      setState(() => _statusMsg = 'Carregando agenda do Google...');
-      await Future.wait([_carregarEventos(), _carregarTarefas()]);
-      setState(() => _carregando = false);
-      _iniciarScrolls();
-      _iniciarSaida(35);
-      await _salvarCache();
-    } catch (e) {
-      debugPrint('TelaCalendario erro: $e');
-      setState(() {
-        _carregando = false;
-        _statusMsg = 'Falha na conexão';
-      });
-      _iniciarSaida(8);
+    final venceu =
+        cache == null || cache.venceu(_cfg.getIntervaloAtualizacao('calendario'));
+    if (_client != null && venceu) {
+      if (cache == null) setState(() => _statusMsg = 'Carregando agenda do Google...');
+      try {
+        final novos = <DateTime, List<ItemAgenda>>{};
+        await Future.wait([_carregarEventos(novos), _carregarTarefas(novos)]);
+        if (!mounted) return;
+        _itensPorDia
+          ..clear()
+          ..addAll(novos);
+        _atualizadoEm = DateTime.now();
+        await _salvarCache();
+      } catch (e) {
+        debugPrint('TelaCalendario erro: $e');
+        if (cache == null) _statusMsg = 'Falha na conexão com o Google';
+      }
     }
+    if (!mounted) return;
+    setState(() {
+      _semConta = _client == null && _itensPorDia.isEmpty;
+      _carregando = false;
+    });
+    _rebuild();
+    _iniciarScrolls();
+    _iniciarSaida(_itensPorDia.isEmpty ? 10 : _duracaoSeg);
+  }
+
+  void _aplicarCache(EntradaCache<Map<String, dynamic>> cache) {
+    _itensPorDia.clear();
+    cache.dados.forEach((chaveIso, lista) {
+      final dia = DateTime.tryParse(chaveIso);
+      if (dia == null || lista is! List) return;
+      _itensPorDia[dia] = lista
+          .map((e) => ItemAgenda.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    });
+    _atualizadoEm = cache.salvoEm;
+    setState(() => _carregando = false);
+    _rebuild();
   }
 
   Future<void> _salvarCache() async {
     final serializado = <String, dynamic>{};
     _itensPorDia.forEach((dia, lista) {
-      serializado[dia.toIso8601String()] =
-          lista.map((i) => i.toJson()).toList();
+      serializado[dia.toIso8601String()] = lista.map((i) => i.toJson()).toList();
     });
     await CacheManager.instance.salvar(_chaveCache, serializado);
   }
 
-  Future<void> _carregarEventos() async {
-    if (_client == null) return;
+  void _adicionar(Map<DateTime, List<ItemAgenda>> mapa, DateTime dia, ItemAgenda item) {
+    (mapa[_chave(dia)] ??= []).add(item);
+  }
+
+  Future<void> _carregarEventos(Map<DateTime, List<ItemAgenda>> mapa) async {
     final api = cal.CalendarApi(_client!);
+    // Mês atual + mês seguinte: no último dia do mês, "Amanhã" já é o mês
+    // seguinte (antes essa lista ficava vazia).
     final inicio = DateTime(_hoje.year, _hoje.month, 1);
-    final fim = DateTime(_hoje.year, _hoje.month + 1, 0, 23, 59);
+    final fim = DateTime(_hoje.year, _hoje.month + 2, 0, 23, 59);
     final res = await api.events.list('primary',
         timeMin: inicio.toUtc(),
         timeMax: fim.toUtc(),
         singleEvents: true,
-        orderBy: 'startTime');
+        orderBy: 'startTime',
+        maxResults: 250);
 
-    for (final ev in res.items ?? []) {
+    for (final ev in res.items ?? <cal.Event>[]) {
       final dt = ev.start?.dateTime ?? ev.start?.date;
       if (dt == null) continue;
-      final chave = _chave(dt);
-      _itensPorDia[chave] ??= [];
-      _itensPorDia[chave]!.add(ItemAgenda(
-        titulo: ev.summary ?? 'Sem título',
-        tipo: TipoItem.evento,
-        horario: ev.start?.dateTime != null
-            ? DateFormat('HH:mm').format(ev.start!.dateTime!.toLocal())
-            : null,
-        dataHora: dt.toLocal(),
-      ));
+      final local = ev.start?.dateTime != null ? dt.toLocal() : dt;
+      _adicionar(
+          mapa,
+          local,
+          ItemAgenda(
+            id: ev.id ?? '',
+            titulo: ev.summary ?? 'Sem título',
+            tipo: TipoItem.evento,
+            horario: ev.start?.dateTime != null ? DateFormat('HH:mm').format(local) : null,
+            dataHora: local,
+          ));
     }
-    _rebuild();
   }
 
-  Future<void> _carregarTarefas() async {
-    if (_client == null) return;
+  Future<void> _carregarTarefas(Map<DateTime, List<ItemAgenda>> mapa) async {
     final api = tasks.TasksApi(_client!);
     final listas = await api.tasklists.list();
 
-    for (final lista in listas.items ?? []) {
+    for (final lista in listas.items ?? <tasks.TaskList>[]) {
       if (lista.id == null) continue;
+      // Listas de compras aparecem na tela de Compras, não aqui.
+      if (ehListaDeCompras(lista.title ?? '')) continue;
 
-      // ── IGNORA listas de compras ──────────────────────────────────────────
-      final nomeMin = (lista.title ?? '').toLowerCase().trim();
-      if (_nomesCompras.any((n) => nomeMin.contains(n))) {
-        debugPrint('Calendário: ignorando lista de compras "${lista.title}"');
-        continue;
-      }
-
-      // Pendentes
-      final tl = await api.tasks
-          .list(lista.id!, showCompleted: false, showHidden: false);
-      for (final t in tl.items ?? []) {
-        if (t.status == 'completed') continue;
+      // Uma chamada só, com pendentes e concluídas (antes eram duas).
+      final tl = await api.tasks.list(lista.id!,
+          showCompleted: true, showHidden: false, maxResults: 100);
+      for (final t in tl.items ?? <tasks.Task>[]) {
+        final concluida = t.status == 'completed';
         DateTime? due;
-        try {
-          if (t.due != null) {
-            // O campo 'due' do Google Tasks é sempre meia-noite UTC.
-            // NÃO convertemos para local pois isso muda o dia.
-            // Usamos apenas a data (ano, mês, dia) diretamente do UTC.
-            final parsed = DateTime.parse(t.due!).toUtc();
-            due = DateTime(parsed.year, parsed.month, parsed.day);
-          }
-        } catch (_) {}
-        final chave = due != null ? _chave(due) : _chave(_hoje);
-        _itensPorDia[chave] ??= [];
-        _itensPorDia[chave]!.add(ItemAgenda(
-          id: t.id ?? '',
-          listaId: lista.id!,
-          titulo: t.title ?? 'Tarefa sem título',
-          tipo: TipoItem.tarefa,
-          dataHora: due,
-        ));
-      }
-
-      // Concluídos (para painel do dia)
-      final tlC = await api.tasks
-          .list(lista.id!, showCompleted: true, showHidden: false);
-      for (final t in tlC.items ?? []) {
-        if (t.status != 'completed') continue;
-        DateTime? due;
-        try {
-          if (t.due != null) {
-            // Mesma correção: usa só a data UTC sem converter timezone
-            final parsed = DateTime.parse(t.due!).toUtc();
-            due = DateTime(parsed.year, parsed.month, parsed.day);
-          }
-        } catch (_) {}
-        if (due == null) continue;
-        final chave = _chave(due);
-        _itensPorDia[chave] ??= [];
-        final jaExiste = _itensPorDia[chave]!
-            .any((i) => i.id == (t.id ?? '') && i.id.isNotEmpty);
-        if (!jaExiste) {
-          _itensPorDia[chave]!.add(ItemAgenda(
-            id: t.id ?? '',
-            listaId: lista.id!,
-            titulo: t.title ?? 'Tarefa sem título',
-            tipo: TipoItem.tarefa,
-            dataHora: due,
-            concluido: true,
-          ));
+        if (t.due != null) {
+          // 'due' do Google Tasks é sempre meia-noite UTC: usa só a data,
+          // sem converter fuso (converter mudaria o dia).
+          final parsed = DateTime.tryParse(t.due!)?.toUtc();
+          if (parsed != null) due = DateTime(parsed.year, parsed.month, parsed.day);
         }
+        if (due == null && concluida) continue;
+        _adicionar(
+            mapa,
+            due ?? _hoje,
+            ItemAgenda(
+              id: t.id ?? '',
+              listaId: lista.id!,
+              titulo: t.title ?? 'Tarefa sem título',
+              tipo: TipoItem.tarefa,
+              dataHora: due,
+              concluido: concluida,
+              semData: due == null,
+            ));
       }
     }
-    _rebuild();
   }
 
   void _rebuild() {
@@ -496,7 +450,9 @@ class _TelaCalendarioState extends State<TelaCalendario>
             child: SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(14),
-                child: _carregando ? _buildCarregando(r) : _buildLayout(r),
+                child: _carregando || _semConta
+                    ? _buildCarregando(r)
+                    : _buildLayout(r),
               ),
             ),
           ),
@@ -506,16 +462,35 @@ class _TelaCalendarioState extends State<TelaCalendario>
   }
 
   Widget _buildAurora() {
-    return AnimatedBuilder(
-      animation: _auroraCtrl,
-      builder: (_, __) => CustomPaint(
-        painter: _AuroraPainter(_auroraCtrl.value),
+    return RepaintBoundary(
+      child: CustomPaint(
+        painter: _AuroraPainter(_auroraCtrl),
         child: const SizedBox.expand(),
       ),
     );
   }
 
+  Widget _buildSemConta(R r) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.account_circle_outlined, color: _ciano, size: r.icon(64)),
+          const SizedBox(height: 16),
+          Text('Conta Google não conectada',
+              style: GoogleFonts.poppins(
+                  color: Colors.white, fontSize: r.fs(24), fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          Text('Abra Configurações › Calendário e toque em "Conectar conta Google".',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(color: Colors.white60, fontSize: r.fs(16))),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCarregando(R r) {
+    if (_semConta) return _buildSemConta(r);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -800,7 +775,10 @@ class _TelaCalendarioState extends State<TelaCalendario>
                 const Icon(Icons.touch_app_rounded,
                     size: 13, color: Colors.white38),
                 const SizedBox(width: 6),
-                Text('Toque num dia para ver detalhes',
+                Text(
+                    _atualizadoEm != null
+                        ? 'Toque num dia para ver detalhes  •  atualizado ${descreverIdade(_atualizadoEm!)}'
+                        : 'Toque num dia para ver detalhes',
                     style: GoogleFonts.poppins(
                         color: Colors.white38, fontSize: 12)),
               ],
@@ -1226,7 +1204,7 @@ class _TelaCalendarioState extends State<TelaCalendario>
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: corItem.withValues(alpha: 0.4)),
               ),
-              child: Text(isEv ? 'EVENTO' : 'TAREFA',
+              child: Text(isEv ? 'EVENTO' : (item.semData ? 'SEM DATA' : 'TAREFA'),
                   style: GoogleFonts.poppins(
                       color: corItem,
                       fontSize: r.fs(10),
@@ -1255,23 +1233,23 @@ class _TelaCalendarioState extends State<TelaCalendario>
     Gradient? gradient,
     EdgeInsets padding = const EdgeInsets.all(14),
   }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: PerformanceManager.instance.sigmaBlur(16),
-          sigmaY: PerformanceManager.instance.sigmaBlur(16),
+    // Sem BackdropFilter: o fundo é animado, então o desfoque seria
+    // recalculado a cada quadro (3 cards = 3 blurs por quadro). Um fundo
+    // escuro translúcido dá um efeito muito parecido a custo quase zero.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B0F24).withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: padding,
+        decoration: BoxDecoration(
+          gradient: gradient,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
         ),
-        child: Container(
-          width: double.infinity,
-          padding: padding,
-          decoration: BoxDecoration(
-            gradient: gradient,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-          ),
-          child: child,
-        ),
+        child: child,
       ),
     );
   }
@@ -1369,11 +1347,12 @@ Widget _googleCalIcon(double size) {
 
 // ─── AURORA BOREAL ────────────────────────────────────────────────────────────
 class _AuroraPainter extends CustomPainter {
-  final double t;
-  _AuroraPainter(this.t);
+  final Animation<double> anim;
+  _AuroraPainter(this.anim) : super(repaint: anim);
 
   @override
   void paint(Canvas canvas, Size s) {
+    final t = anim.value;
     final bg = Paint()
       ..shader = const LinearGradient(
         begin: Alignment.topLeft,
@@ -1443,5 +1422,5 @@ class _AuroraPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_AuroraPainter old) => old.t != t;
+  bool shouldRepaint(_AuroraPainter old) => old.anim != anim;
 }

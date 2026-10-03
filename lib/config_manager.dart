@@ -1,33 +1,14 @@
-// ═══════════════════════════════════════════════════════════════════════════════
-//  PATCH — config_manager.dart
-//
-//  Adicione a entrada 'spotify' no Map defaults, dentro da classe ConfigManager.
-//  Localização: após a entrada 'barra_info' no Map defaults.
-//
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// Trecho a ADICIONAR no Map defaults (após 'barra_info'):
-/*
-    'spotify': {
-      'client_id':           '',        // Preenchido pelo usuário na TelaConfig
-      'redirect_uri':        '',
-      'duracao_tela_seg':    30,         // Tempo que a TelaSpotify fica visível
-      'aparecer_na_rotacao': true,       // Entra na sequência automática
-      'cor_acento':          '0xFF1DB954',
-      'genius_token':         '',
-      'genius_token':        '',
-    },
-*/
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  ARQUIVO COMPLETO com patch aplicado (substitua o original)
-// ─────────────────────────────────────────────────────────────────────────────
-
-import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+/// Configurações do app, salvas em JSON na pasta de documentos.
+///
+/// Observação: a categoria do time continua se chamando 'palmeiras' por
+/// compatibilidade com as configurações já salvas nos tablets — ela vale
+/// para qualquer time escolhido.
 class ConfigManager {
   static final ConfigManager _instance = ConfigManager._internal();
   factory ConfigManager() => _instance;
@@ -35,30 +16,37 @@ class ConfigManager {
 
   Map<String, dynamic> _config = {};
 
+  /// Incrementa a cada salvar() — quem depende de configuração (timers da
+  /// barra, rodízio...) escuta isto para se reajustar sem reiniciar o app.
+  final ValueNotifier<int> revisao = ValueNotifier<int>(0);
+
+  static const List<String> sequenciaPadrao = [
+    'bom_dia',
+    'clima',
+    'palmeiras',
+    'proxima_partida',
+    'classificacao',
+    'calendario',
+    'compras',
+    'brasil',
+    'regiao',
+    'fotos',
+    'spotify',
+  ];
+
   static const Map<String, dynamic> defaults = {
     'geral': {
-      'nome_usuario': 'Bem-vindo',
+      'nome_usuario': '',
       'transicao_tipo': 'fade',
       'transicao_ms': 800,
       'pausa_preta_ms': 300,
       'tempo_modo_manual': 45,
-      'sequencia': [
-        'bom_dia',
-        'clima',
-        'palmeiras',
-        'proxima_partida',
-        'classificacao',
-        'calendario',
-        'compras',
-        'brasil',
-        'regiao',
-        'fotos',
-        'spotify',
-      ],
+      'manter_tela_ligada': true,
+      'sequencia': sequenciaPadrao,
       'telas_ativas': [
         'bom_dia', 'clima', 'palmeiras', 'proxima_partida', 'classificacao',
         'calendario', 'compras', 'brasil', 'regiao', 'fotos',
-        // 'spotify' inativo por padrão — só aparece via evento de troca de música
+        // 'spotify' fica fora da rotação — aparece sozinho ao trocar música
       ],
     },
     'clima': {
@@ -67,12 +55,7 @@ class ConfigManager {
       'estado': 'SP',
       'lat': '-22.889',
       'lon': '-47.222',
-      'unidade': 'C',
-      'fonte': 'Poppins',
-      'tamanho_temp': 90.0,
-      'cor_primaria': '0xFF1e3c72',
-      'cor_secundaria': '0xFF2a5298',
-      'intervalo_atualizacao_min': 30, // a cada quanto tempo busca dado novo
+      'intervalo_atualizacao_min': 30,
     },
     'palmeiras': {
       'duracao_scroll_px_seg': 35,
@@ -80,54 +63,35 @@ class ConfigManager {
       'cor_gradiente_top': '0xFF00441B',
       'cor_gradiente_bottom': '0xFF000000',
       'cor_destaque': '0xFFC1A163',
-      'tamanho_titulo': 42.0,
-      'tamanho_noticia': 19.0,
-      'fonte': 'Rajdhani',
       'qtd_noticias': 8,
       'nome_rss': 'palmeiras',
       'nome_time': 'Palmeiras',
       'escudo_asset': 'assets/escudos/palmeiras.png',
-      'escudo_url': '',
       'intervalo_atualizacao_min': 60,
     },
     'proxima_partida': {
-      'duracao_seg': 15,
-      'cor_gradiente_top': '0xFF00441B',
-      'cor_gradiente_bottom': '0xFF000000',
-      'cor_borda': '0xFFC1A163',
-      'tamanho_confronto': 28.0,
-      'fonte': 'Rajdhani',
+      'duracao_seg': 20,
+      'mostrar_canais': true,
       'intervalo_atualizacao_min': 240,
     },
     'classificacao': {
-      'scroll_velocidade': 0.8,
-      'pausa_troca_seg': 2,
-      'cor_fundo_tabela': '0xFF1a1a1a',
-      'cor_destaque_palmeiras': '0xFF004d20',
-      'cor_g4': '0xFF00c853',
-      'cor_z4': '0xFFff5252',
-      'tamanho_fonte_dados': 14.0,
-      'fonte': 'Rajdhani',
+      'scroll_velocidade': 30, // pixels por segundo
+      'pausa_troca_seg': 3,
+      'mostrar_libertadores': true,
       'intervalo_atualizacao_min': 120,
     },
     'calendario': {
       'duracao_seg': 35,
-      'pausa_scroll_seg': 3,
-      'fonte': 'Rajdhani',
       'intervalo_atualizacao_min': 30,
     },
     'compras': {
       'duracao_seg': 30,
-      'fonte': 'Rajdhani',
       'intervalo_atualizacao_min': 30,
     },
     'brasil': {
       'duracao_scroll_px_seg': 35,
       'pausa_final_seg': 10,
-      'cor_gradiente_top': '0xFF0a1628',
-      'cor_gradiente_bottom': '0xFF000000',
-      'cor_destaque': '0xFFFFD700',
-      'qtd_noticias': 3, // agora é "por categoria", não mais total
+      'qtd_noticias': 3, // por categoria
       'categorias_selecionadas': [
         'politica',
         'economia',
@@ -135,8 +99,6 @@ class ConfigManager {
         'saude',
         'geral'
       ],
-      'tamanho_noticia': 17.0,
-      'fonte': 'Rajdhani',
       'intervalo_atualizacao_min': 60,
     },
     'regiao': {
@@ -144,21 +106,19 @@ class ConfigManager {
       'pausa_final_seg': 10,
       'cor_gradiente_top': '0xFF1a237e',
       'cor_gradiente_bottom': '0xFF000000',
-      'cor_destaque': '0xFF00BCD4',
-      'tamanho_titulo': 40.0,
-      'tamanho_noticia': 18.0,
-      'qtd_noticias': 4,
-      'fonte': 'Rajdhani',
+      'qtd_noticias': 3, // por cidade
       'cidades_selecionadas': ['hortolandia'],
       'intervalo_atualizacao_min': 60,
     },
     'bom_dia': {
+      'hora_inicio': 4,
+      'hora_fim': 10,
       'duracao_longa_seg': 90,
       'duracao_curta_seg': 20,
     },
     'fotos': {
       'duracao_por_foto_seg': 8,
-      'transicao_foto_ms': 1000,
+      'fotos_por_visita': 4,
     },
     'time': {
       'time_key': 'palmeiras',
@@ -166,45 +126,39 @@ class ConfigManager {
     'barra_info': {
       'mostrar_clima': true,
       'mostrar_ticker': true,
+      'aurora_ativa': true,
       'tipo_ticker': 'misturado',
       'intervalo_clima_min': 10,
       'rotacao_ticker_seg': 12,
     },
-    // ── NOVO: Spotify ────────────────────────────────────────────────────────
     'spotify': {
       'client_id': '',
-      'redirect_uri': '',
+      'redirect_uri': 'https://localhost:8888/callback',
       'duracao_tela_seg': 30,
       'aparecer_na_rotacao': false, // fora da rotação automática por padrão
-      'aparecer_por_evento': true, // interrompe ao trocar música por padrão
-      'cor_acento': '0xFF1DB954',
+      'aparecer_por_evento': true, // interrompe ao trocar música
     },
-    // ── NOVO: Performance ────────────────────────────────────────────────────
+    'noite': {
+      'ativo': true,
+      'hora_inicio': 23,
+      'hora_fim': 6,
+    },
     'performance': {
-      'modo_economico': false, // false = visual completo (padrão atual)
+      'modo_economico': false, // false = visual completo
     },
-    // ── NOVO: Atualizações ───────────────────────────────────────────────────
     'atualizacoes': {
-      'intervalo_verificacao_horas':
-          6, // de quanto em quanto tempo verifica sozinho
+      'intervalo_verificacao_horas': 6,
     },
   };
 
   Map<String, dynamic> get config => _config;
 
-  /// Intervalo de atualização configurado pelo usuário para uma categoria
-  /// (clima, palmeiras, brasil, regiao, classificacao, calendario, compras,
-  /// proxima_partida), já convertido em Duration. Usado pelas telas junto
-  /// com o CacheManager: se o cache for mais novo que esse intervalo, a
-  /// tela usa o dado salvo em vez de buscar de novo na internet.
+  /// Intervalo de atualização configurado para uma categoria.
   Duration getIntervaloAtualizacao(String categoria) {
     final min = getInt(categoria, 'intervalo_atualizacao_min', 60);
-    return Duration(minutes: min.clamp(5, 20160)); // mínimo 5min, máx 2 semanas
+    return Duration(minutes: min.clamp(5, 20160)); // 5 min a 2 semanas
   }
 
-  /// Opções padrão exibidas na tela de Configurações para o seletor de
-  /// intervalo de atualização. Mantido aqui para ficar consistente em
-  /// todas as categorias que usam esse campo.
   static const List<Map<String, dynamic>> opcoesIntervaloAtualizacao = [
     {'label': '30 em 30 min', 'min': 30},
     {'label': 'De hora em hora', 'min': 60},
@@ -218,64 +172,49 @@ class ConfigManager {
   }
 
   void set(String categoria, String chave, dynamic valor) {
-    _config[categoria] ??= {};
+    _config[categoria] ??= <String, dynamic>{};
     _config[categoria][chave] = valor;
   }
 
   int getInt(String cat, String chave, [int fallback = 0]) {
-    try {
-      final v = get(cat, chave);
-      if (v == null) return fallback;
-      return (v as num).toInt();
-    } catch (_) {
-      return fallback;
-    }
+    final v = get(cat, chave);
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v) ?? double.tryParse(v)?.toInt() ?? fallback;
+    return fallback;
   }
 
   double getDouble(String cat, String chave, [double fallback = 0.0]) {
-    try {
-      final v = get(cat, chave);
-      if (v == null) return fallback;
-      return (v as num).toDouble();
-    } catch (_) {
-      return fallback;
-    }
+    final v = get(cat, chave);
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v) ?? fallback;
+    return fallback;
   }
 
   String getString(String cat, String chave, [String fallback = '']) {
-    try {
-      return (get(cat, chave) as String?) ?? fallback;
-    } catch (_) {
-      return fallback;
-    }
+    final v = get(cat, chave);
+    if (v == null) return fallback;
+    return v is String ? v : '$v';
   }
 
   Color getColor(String cat, String chave, [Color fallback = Colors.black]) {
     try {
-      final raw = get(cat, chave) as String?;
-      if (raw == null) return fallback;
-      return Color(int.parse(raw));
-    } catch (_) {
-      return fallback;
-    }
+      final raw = get(cat, chave);
+      if (raw is String) return Color(int.parse(raw));
+    } catch (_) {}
+    return fallback;
   }
 
   List<String> getStringList(String cat, String chave) {
-    try {
-      final raw = get(cat, chave);
-      if (raw is List) return raw.map((e) => e.toString()).toList();
-    } catch (_) {}
+    final raw = get(cat, chave);
+    if (raw is List) return raw.map((e) => e.toString()).toList();
     final def = defaults[cat]?[chave];
     if (def is List) return List<String>.from(def);
     return [];
   }
 
   bool getBool(String cat, String chave, [bool fallback = false]) {
-    try {
-      final v = get(cat, chave);
-      if (v is bool) return v;
-    } catch (_) {}
-    return fallback;
+    final v = get(cat, chave);
+    return v is bool ? v : fallback;
   }
 
   Future<File> get _localFile async {
@@ -288,7 +227,7 @@ class ConfigManager {
       final file = await _localFile;
       if (await file.exists()) {
         final contents = await file.readAsString();
-        _config = _deepCopy(jsonDecode(contents));
+        _config = _deepCopy(jsonDecode(contents) as Map<String, dynamic>);
         _mergeDefaults();
       } else {
         _config = _deepCopy(defaults);
@@ -302,10 +241,15 @@ class ConfigManager {
   Future<void> salvar() async {
     try {
       final file = await _localFile;
-      await file.writeAsString(jsonEncode(_config));
+      // Grava num arquivo temporário e renomeia: se o tablet desligar no
+      // meio da gravação, o arquivo de configuração antigo continua inteiro.
+      final tmp = File('${file.path}.tmp');
+      await tmp.writeAsString(jsonEncode(_config));
+      await tmp.rename(file.path);
     } catch (e) {
       debugPrint('ConfigManager.salvar erro: $e');
     }
+    revisao.value++;
   }
 
   Future<void> resetar() async {
@@ -315,18 +259,17 @@ class ConfigManager {
 
   void _mergeDefaults() {
     for (final cat in defaults.keys) {
-      _config[cat] ??= {};
+      final atual = _config[cat];
+      if (atual is! Map) _config[cat] = <String, dynamic>{};
       final defaultCat = defaults[cat] as Map<String, dynamic>;
       for (final chave in defaultCat.keys) {
-        _config[cat][chave] ??= defaultCat[chave];
+        _config[cat][chave] ??= _deepCopyValor(defaultCat[chave]);
       }
     }
-    final seqDefault =
-        List<String>.from((defaults['geral'] as Map)['sequencia'] as List);
-    final seqAtual =
-        List<String>.from(_config['geral']['sequencia'] as List? ?? []);
-    bool alterou = false;
-    for (final tela in seqDefault) {
+    // Telas novas adicionadas em versões futuras entram no fim da sequência.
+    final seqAtual = getStringList('geral', 'sequencia');
+    var alterou = false;
+    for (final tela in sequenciaPadrao) {
       if (!seqAtual.contains(tela)) {
         seqAtual.add(tela);
         alterou = true;
@@ -334,6 +277,8 @@ class ConfigManager {
     }
     if (alterou) _config['geral']['sequencia'] = seqAtual;
   }
+
+  static dynamic _deepCopyValor(dynamic v) => jsonDecode(jsonEncode(v));
 
   static Map<String, dynamic> _deepCopy(Map<String, dynamic> source) {
     return jsonDecode(jsonEncode(source)) as Map<String, dynamic>;

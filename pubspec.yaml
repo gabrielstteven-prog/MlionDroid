@@ -1,7 +1,7 @@
 name: mlion_droid
-description: Monitoramento MlionDroid
+description: MlionDroid Center — painel inteligente para tablet.
 
-version: 1.0.24+25
+version: 1.0.25+26
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -10,29 +10,31 @@ dependencies:
   flutter:
     sdk: flutter
 
-  cupertino_icons: ^1.0.8
-  webview_flutter: ^4.4.2
+  # Rede e dados
   http: ^1.1.0
-  intl: ^0.20.2
-  xml: ^6.3.0
-  cached_network_image: ^3.3.1
-  html: ^0.15.4
+  xml: ^6.3.0            # RSS de notícias
+  html: ^0.15.4          # programação de TV (futebolnatv)
   path_provider: ^2.1.2
-  file_picker: ^8.0.0
   shared_preferences: ^2.2.2
-  crypto: ^3.0.3
-  weather_icons: ^3.0.0
-  lottie: ^3.1.0
-  google_fonts: ^6.2.1
-  googleapis: ^13.2.0
-  googleapis_auth: ^1.6.0
-  table_calendar: ^3.1.2
-  url_launcher: ^6.2.5
-  google_sign_in: ^6.2.1
-  video_player: ^2.11.1
-  # spotify_sdk removido — usando Web API via http
+  crypto: ^3.0.3         # PKCE do Spotify + SHA-256 das atualizações
+  intl: ^0.20.2
 
-  # ── Sistema de atualização via GitHub Releases ──────────────────────────
+  # Interface
+  cached_network_image: ^3.3.1
+  google_fonts: ^6.2.1
+  lottie: ^3.1.0
+  table_calendar: ^3.1.2
+  webview_flutter: ^4.4.2
+
+  # Google Agenda / Tasks
+  google_sign_in: ^6.2.1
+  googleapis: ^13.2.0
+
+  # Fotos, links e sistema
+  file_picker: ^8.0.0
+  url_launcher: ^6.2.5
+
+  # Atualização via GitHub Releases
   package_info_plus: ^8.0.0
   open_filex: ^4.5.0
 
@@ -49,11 +51,3 @@ flutter:
     - assets/escudos/
     - assets/logos/
     - assets/sobre/
-
-flutter_launcher_icons:
-  android: true
-  ios: false
-  image_path: "assets/icon/icon.png"
-  min_sdk_android: 21
-  adaptive_icon_background: "#0a0a4a"
-  adaptive_icon_foreground: "assets/icon/icon.png"

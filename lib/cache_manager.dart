@@ -6,22 +6,25 @@ import 'package:flutter/foundation.dart';
 // ═══════════════════════════════════════════════════════════════════════════
 //  CacheManager — armazenamento local persistente com expiração por chave.
 //
-//  PROBLEMA QUE RESOLVE:
-//  Toda vez que uma tela é reconstruída (troca de tela, volta na sequência),
-//  ela buscava dados (clima, notícias, imagens) do zero pela internet.
-//  Isso deixava o app lento e gerava tráfego de rede desnecessário, já que
-//  esses dados não mudam a cada poucos segundos.
+//  Cada tela/serviço consulta o cache antes de ir à internet. Se o dado
+//  ainda está dentro da validade, é usado direto. Se venceu, o serviço tenta
+//  buscar de novo — e, se a internet falhar, ainda pode mostrar o último
+//  dado conhecido (via [obterEntrada]), em vez de deixar a tela vazia.
 //
-//  SOLUÇÃO:
-//  Cada tela, antes de buscar dados online, consulta o cache local. Se os
-//  dados existem e ainda não "venceram" (têm um tempo de validade próprio
-//  por tipo de informação), eles são usados imediatamente — sem requisição
-//  de rede. Só quando o cache está vazio ou expirado é que a tela busca de
-//  novo, salva o resultado, e o ciclo se repete.
-//
-//  Os dados ficam salvos em arquivos JSON na pasta de documentos do app,
-//  então sobrevivem a trocas de tela e fechamento do app.
+//  Os dados ficam em arquivos JSON na pasta de documentos do app, então
+//  sobrevivem a trocas de tela e ao fechamento do app.
 // ═══════════════════════════════════════════════════════════════════════════
+
+/// Um dado salvo no cache, com a data em que foi salvo.
+class EntradaCache<T> {
+  final T dados;
+  final DateTime salvoEm;
+  const EntradaCache(this.dados, this.salvoEm);
+
+  Duration get idade => DateTime.now().difference(salvoEm);
+  bool venceu(Duration validade) => idade > validade;
+}
+
 class CacheManager {
   CacheManager._();
   static final CacheManager instance = CacheManager._();
@@ -38,7 +41,12 @@ class CacheManager {
     return pasta;
   }
 
-  File _arquivo(Directory dir, String chave) => File('${dir.path}/$chave.json');
+  /// Chaves podem conter coordenadas, nomes de cidade etc. — normaliza para
+  /// um nome de arquivo seguro.
+  File _arquivo(Directory dir, String chave) {
+    final seguro = chave.replaceAll(RegExp(r'[^A-Za-z0-9_\-.]'), '_');
+    return File('${dir.path}/$seguro.json');
+  }
 
   /// Salva um valor no cache, junto com o timestamp de quando foi salvo.
   /// O valor deve ser serializável em JSON (Map, List, String, num, bool).
@@ -56,43 +64,41 @@ class CacheManager {
     }
   }
 
+  Future<Map<String, dynamic>?> _pacote(String chave) async {
+    final emRam = _memoria[chave];
+    if (emRam != null) return emRam as Map<String, dynamic>;
+    try {
+      final dir = await _diretorio();
+      final file = _arquivo(dir, chave);
+      if (!await file.exists()) return null;
+      final pacote = jsonDecode(await file.readAsString());
+      if (pacote is! Map<String, dynamic>) return null;
+      _memoria[chave] = pacote; // promove para RAM
+      return pacote;
+    } catch (e) {
+      debugPrint('CacheManager._pacote($chave): $e');
+      return null;
+    }
+  }
+
+  /// Retorna o dado salvo para [chave] COM a data em que foi salvo, mesmo
+  /// que já esteja vencido. Quem chama decide se usa (ex.: sem internet,
+  /// mostrar o último dado conhecido é melhor que mostrar nada).
+  Future<EntradaCache<T>?> obterEntrada<T>(String chave) async {
+    final pacote = await _pacote(chave);
+    if (pacote == null) return null;
+    final salvoEm = DateTime.tryParse(pacote['salvo_em'] as String? ?? '');
+    final dados = pacote['dados'];
+    if (salvoEm == null || dados is! T) return null;
+    return EntradaCache<T>(dados, salvoEm);
+  }
+
   /// Retorna os dados salvos para [chave] se existirem e ainda estiverem
   /// dentro da [validade]. Retorna null se não existir ou estiver expirado.
   Future<T?> obter<T>(String chave, {required Duration validade}) async {
-    // 1. Tenta primeiro a RAM (instantâneo, sem I/O de disco)
-    var pacote = _memoria[chave];
-
-    // 2. Se não está na RAM, tenta carregar do disco
-    if (pacote == null) {
-      try {
-        final dir = await _diretorio();
-        final file = _arquivo(dir, chave);
-        if (await file.exists()) {
-          pacote = jsonDecode(await file.readAsString());
-          _memoria[chave] = pacote; // promove para RAM
-        }
-      } catch (e) {
-        debugPrint('CacheManager.obter($chave): $e');
-        return null;
-      }
-    }
-
-    if (pacote == null) return null;
-
-    final salvoEm = DateTime.tryParse(pacote['salvo_em'] ?? '');
-    if (salvoEm == null) return null;
-
-    final expirado = DateTime.now().difference(salvoEm) > validade;
-    if (expirado) return null;
-
-    return pacote['dados'] as T?;
-  }
-
-  /// Verifica se existe cache válido para [chave], sem precisar ler os dados.
-  Future<bool> temCacheValido(String chave,
-      {required Duration validade}) async {
-    final dados = await obter(chave, validade: validade);
-    return dados != null;
+    final entrada = await obterEntrada<T>(chave);
+    if (entrada == null || entrada.venceu(validade)) return null;
+    return entrada.dados;
   }
 
   /// Remove uma entrada específica do cache (memória + disco).
@@ -107,8 +113,7 @@ class CacheManager {
     }
   }
 
-  /// Limpa todo o cache — útil para um botão "Forçar atualização" nas
-  /// configurações, ou debug.
+  /// Limpa todo o cache — usado pelo botão "Forçar atualização".
   Future<void> limparTudo() async {
     _memoria.clear();
     try {
@@ -121,49 +126,40 @@ class CacheManager {
       debugPrint('CacheManager.limparTudo: $e');
     }
   }
-
-  /// Retorna quando os dados de [chave] foram salvos por último, ou null.
-  Future<DateTime?> salvoEm(String chave) async {
-    var pacote = _memoria[chave];
-    if (pacote == null) {
-      try {
-        final dir = await _diretorio();
-        final file = _arquivo(dir, chave);
-        if (await file.exists()) {
-          pacote = jsonDecode(await file.readAsString());
-        }
-      } catch (_) {
-        return null;
-      }
-    }
-    if (pacote == null) return null;
-    return DateTime.tryParse(pacote['salvo_em'] ?? '');
-  }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Validades padrão recomendadas por tipo de dado — centralizado aqui para
-//  fácil ajuste e consistência entre todas as telas do app.
-// ═══════════════════════════════════════════════════════════════════════════
-class CacheValidade {
-  // Clima: temperatura atual muda rápido, mas não precisa ser em tempo real
-  static const climaAtual = Duration(minutes: 20);
-  // Previsão dos próximos dias muda bem pouco ao longo do dia
-  static const climaPrevisao = Duration(hours: 3);
+/// Busca com cache "stale-while-revalidate":
+///  1. dado dentro da validade → usa direto, sem internet;
+///  2. vencido/ausente → busca na internet e salva;
+///  3. internet falhou → devolve o último dado salvo, mesmo vencido.
+///
+/// [buscar] deve lançar exceção (ou retornar null) quando falhar.
+Future<EntradaCache<T>?> buscarComCache<T>({
+  required String chave,
+  required Duration validade,
+  required Future<T?> Function() buscar,
+  bool forcar = false,
+}) async {
+  final cache = await CacheManager.instance.obterEntrada<T>(chave);
+  if (!forcar && cache != null && !cache.venceu(validade)) return cache;
+  try {
+    final novo = await buscar();
+    if (novo != null) {
+      await CacheManager.instance.salvar(chave, novo);
+      return EntradaCache<T>(novo, DateTime.now());
+    }
+  } catch (e) {
+    debugPrint('buscarComCache($chave): $e');
+  }
+  return cache; // pode ser null se nunca houve dado
+}
 
-  // Notícias: o "principal do dia" não muda de minuto a minuto
-  static const noticias = Duration(hours: 1);
-
-  // Imagens de notícias: o conteúdo da imagem em si nunca muda depois de
-  // publicada — pode ficar em cache bem mais tempo que o texto
-  static const imagemNoticia = Duration(hours: 6);
-
-  // Classificação do campeonato: atualiza só após jogos terminarem
-  static const classificacao = Duration(hours: 2);
-
-  // Próxima partida do time: muda raramente, só após o jogo acontecer
-  static const proximaPartida = Duration(hours: 6);
-
-  // Frase/inspiração do dia: por definição, é "do dia" — vale o dia todo
-  static const fraseDoDia = Duration(hours: 12);
+/// Texto curto para "atualizado há X" mostrado nas telas.
+String descreverIdade(DateTime salvoEm, [DateTime? agora]) {
+  final d = (agora ?? DateTime.now()).difference(salvoEm);
+  if (d.inMinutes < 1) return 'agora mesmo';
+  if (d.inMinutes < 60) return 'há ${d.inMinutes} min';
+  if (d.inHours < 24) return 'há ${d.inHours} h';
+  final dias = d.inDays;
+  return dias == 1 ? 'há 1 dia' : 'há $dias dias';
 }

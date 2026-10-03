@@ -1,20 +1,24 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
-import 'package:xml/xml.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'dart:convert';
-import 'dart:async';
-import 'dart:math' as math;
-import 'dart:ui' as ui;
-import 'dart:io';
+import 'package:webview_flutter/webview_flutter.dart';
+
 import 'config_manager.dart';
-import 'cache_manager.dart';
-import 'responsive.dart';
+import 'info_hub.dart';
 import 'performance_manager.dart';
+import 'responsive.dart';
+import 'services/fotos_service.dart';
+import 'services/news_service.dart';
+import 'services/weather_service.dart';
+import 'util.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  TelaBomDia v4 — Visual, dinâmico, inspirador, com Foto do Dia
+//  TelaBomDia — saudação, clima do dia, foto do dia, notícia e frase.
+//  Aparece só na janela de horário configurada (o rodízio filtra).
 // ═══════════════════════════════════════════════════════════════════════════
 class TelaBomDia extends StatefulWidget {
   final VoidCallback aoTerminar;
@@ -27,22 +31,23 @@ class TelaBomDia extends StatefulWidget {
 class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
   final _cfg = ConfigManager();
 
-  // ── Dados clima ───────────────────────────────────────────────────────────
-  int _tempAtual = 22;
-  int _tempMax = 26;
-  int _tempMin = 16;
-  int _sensacao = 21;
-  int _probChuva = 0;
-  int _weatherCode = 0;
-  String _frase = '';
-  String _noticiaTitle = '';
-  String _noticiaDesc = '';
-  String _noticiaImg = '';
+  // ── Dados ─────────────────────────────────────────────────────────────────
+  DadosClima? _clima = WeatherService.instance.atual;
+  int get _tempAtual => _clima?.temp ?? 0;
+  int get _tempMax => _clima?.hoje?.max ?? 0;
+  int get _tempMin => _clima?.hoje?.min ?? 0;
+  int get _sensacao => _clima?.sensacao ?? 0;
+  int get _probChuva => _clima?.hoje?.chanceChuva ?? 0;
+  int get _weatherCode => _clima?.codigo ?? 0;
+  bool get _ehDia => _clima?.ehDia ?? true;
+
+  final String _frase = fraseDoDia();
+  Noticia? _noticia;
   String? _fotoDoDia;
   bool _carregando = true;
-  bool _foraDoHorario = false;
 
   Timer? _saidaTimer;
+  Timer? _antiTravamento;
 
   // ── Controllers ───────────────────────────────────────────────────────────
   late AnimationController _bgCtrl; // fundo animado infinito
@@ -57,22 +62,21 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
   final List<_Particula> _particulas = [];
 
   // ── Config ────────────────────────────────────────────────────────────────
-  String get _nomeUsuario => _cfg.getString('geral', 'nome_usuario', 'Gabriel');
-  String get _lat => _cfg.getString('clima', 'lat', '-22.889');
-  String get _lon => _cfg.getString('clima', 'lon', '-47.222');
+  /// Nome na saudação. Vazio (ou o antigo padrão "Bem-vindo") = sem nome,
+  /// evitando o estranho "Bom dia Bem-vindo,".
+  String get _nomeUsuario {
+    final n = _cfg.getString('geral', 'nome_usuario', '').trim();
+    return n.toLowerCase() == 'bem-vindo' ? '' : n;
+  }
+
   int get _horaInicio => _cfg.getInt('bom_dia', 'hora_inicio', 4);
   int get _horaFim => _cfg.getInt('bom_dia', 'hora_fim', 10);
   int get _duracaoLongo => _cfg.getInt('bom_dia', 'duracao_longa_seg', 90);
   int get _duracaoCurto => _cfg.getInt('bom_dia', 'duracao_curta_seg', 20);
 
   // ── Personalização visual ───────────────────────────────────────────────
-  double get _tamanhoNome =>
-      double.tryParse(_cfg.getString('bom_dia', 'tamanho_nome', '40.0')) ??
-      40.0;
-  double get _tamanhoTemp =>
-      double.tryParse(_cfg.getString('bom_dia', 'tamanho_temp', '72.0')) ??
-      72.0;
-  String get _fonteEscolha => _cfg.getString('bom_dia', 'fonte', 'poppins');
+  double get _tamanhoNome => _cfg.getDouble('bom_dia', 'tamanho_nome', 40.0);
+  double get _tamanhoTemp => _cfg.getDouble('bom_dia', 'tamanho_temp', 72.0);
   String get _corDestaqueHex => _cfg.getString('bom_dia', 'cor_destaque', '');
   bool get _mostrarChuva => _cfg.getBool('bom_dia', 'mostrar_chuva', true);
   bool get _mostrarFrase => _cfg.getBool('bom_dia', 'mostrar_frase', true);
@@ -91,47 +95,24 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
     List<Shadow>? shadows,
   }) {
     final base = _cfg.getString('bom_dia', 'fonte', 'poppins');
+    final estilo = TextStyle(
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        color: color,
+        height: height,
+        fontStyle: fontStyle,
+        shadows: shadows);
     switch (base) {
       case 'rajdhani':
-        return GoogleFonts.rajdhani(
-            fontSize: fontSize,
-            fontWeight: fontWeight,
-            color: color,
-            height: height,
-            fontStyle: fontStyle,
-            shadows: shadows);
+        return GoogleFonts.rajdhani(textStyle: estilo);
       case 'orbitron':
-        return GoogleFonts.orbitron(
-            fontSize: fontSize,
-            fontWeight: fontWeight,
-            color: color,
-            height: height,
-            fontStyle: fontStyle,
-            shadows: shadows);
+        return GoogleFonts.orbitron(textStyle: estilo);
       case 'roboto':
-        return GoogleFonts.roboto(
-            fontSize: fontSize,
-            fontWeight: fontWeight,
-            color: color,
-            height: height,
-            fontStyle: fontStyle,
-            shadows: shadows);
+        return GoogleFonts.roboto(textStyle: estilo);
       case 'exo2':
-        return GoogleFonts.exo2(
-            fontSize: fontSize,
-            fontWeight: fontWeight,
-            color: color,
-            height: height,
-            fontStyle: fontStyle,
-            shadows: shadows);
+        return GoogleFonts.exo2(textStyle: estilo);
       default:
-        return GoogleFonts.poppins(
-            fontSize: fontSize,
-            fontWeight: fontWeight,
-            color: color,
-            height: height,
-            fontStyle: fontStyle,
-            shadows: shadows);
+        return GoogleFonts.poppins(textStyle: estilo);
     }
   }
 
@@ -139,72 +120,25 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
   Color _resolverCorDestaque(_ClimaTheme theme) {
     final hex = _corDestaqueHex;
     if (hex.isEmpty) return theme.corDestaque;
-    try {
-      return Color(int.parse(hex));
-    } catch (_) {
-      return theme.corDestaque;
-    }
+    return parseCor(hex, theme.corDestaque.toARGB32());
   }
 
-  // ── Clima: paleta e ícone baseados no código ──────────────────────────────
-  _ClimaTheme get _climaTheme => _ClimaTheme.fromCode(_weatherCode, _probChuva);
+  _ClimaTheme get _climaTheme =>
+      _ClimaTheme.fromCode(_weatherCode, _probChuva, ehDia: _ehDia);
 
-  // ── Data e hora — calculadas sob demanda, sem Timer próprio ─────────────
-  // A tela já é reconstruída a cada frame por causa das animações de fundo
-  // (_bgCtrl/_floatCtrl), então ler DateTime.now() aqui já é suficiente para
-  // o relógio "andar" sozinho, sem custo extra de performance.
-  static const _diasSemana = [
-    'segunda-feira',
-    'terça-feira',
-    'quarta-feira',
-    'quinta-feira',
-    'sexta-feira',
-    'sábado',
-    'domingo',
-  ];
-
+  // ── Data e hora ───────────────────────────────────────────────────────────
   static const _mesesAbrev = [
-    'JAN',
-    'FEV',
-    'MAR',
-    'ABR',
-    'MAI',
-    'JUN',
-    'JUL',
-    'AGO',
-    'SET',
-    'OUT',
-    'NOV',
-    'DEZ',
+    'JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN',
+    'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ',
   ];
 
-  String get _horaFormatada {
-    final agora = DateTime.now();
-    final h = agora.hour.toString().padLeft(2, '0');
-    final m = agora.minute.toString().padLeft(2, '0');
-    return '$h:$m';
-  }
-
-  String get _dataNumerica {
-    final agora = DateTime.now();
-    final d = agora.day.toString().padLeft(2, '0');
-    final mes = _mesesAbrev[agora.month - 1];
-    return '$d $mes';
-  }
-
-  String get _anoFormatado => '${DateTime.now().year}';
-
-  String get _diaSemanaFormatado {
-    final agora = DateTime.now();
-    final nome = _diasSemana[agora.weekday - 1];
-    return nome[0].toUpperCase() + nome.substring(1);
-  }
+  String _dataNumerica(DateTime agora) =>
+      '${doisDigitos(agora.day)} ${_mesesAbrev[agora.month - 1]}';
 
   @override
   void initState() {
     super.initState();
 
-    // Inicializa controllers ANTES de qualquer verificação
     _bgCtrl =
         AnimationController(vsync: this, duration: const Duration(seconds: 12));
     _entradaCtrl = AnimationController(
@@ -216,10 +150,9 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
     _floatCtrl =
         AnimationController(vsync: this, duration: const Duration(seconds: 18));
 
-    // Fundo, ícone, pulso e partículas são puramente decorativos — só
-    // rodam em loop contínuo no modo visual completo. _entradaCtrl (fade-in
-    // de entrada) não entra aqui: ele dispara uma vez só, custa muito pouco.
-    if (!PerformanceManager.instance.modoEconomico) {
+    // Fundo, ícone, pulso e partículas são decorativos — só em loop no modo
+    // visual completo.
+    if (PerformanceManager.instance.animacoesDecorativasAtivas) {
       _bgCtrl.repeat(reverse: true);
       _iconCtrl.repeat(reverse: true);
       _pulseCtrl.repeat(reverse: true);
@@ -233,7 +166,6 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
     _pulseAnim = Tween<double>(begin: 1.0, end: 1.03)
         .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
 
-    // Partículas: sol=estrelas, chuva=gotas, nublado=cirros
     final rng = math.Random();
     for (int i = 0; i < 30; i++) {
       _particulas.add(_Particula(
@@ -246,19 +178,9 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
       ));
     }
 
-    // Verifica horário
-    final hora = DateTime.now().hour;
-    if (hora < _horaInicio || hora >= _horaFim) {
-      _foraDoHorario = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) widget.aoTerminar();
-      });
-      return;
-    }
-
     _entradaCtrl.forward();
     _carregarDados();
-    Timer(const Duration(minutes: 3), () {
+    _antiTravamento = Timer(const Duration(minutes: 5), () {
       if (mounted) widget.aoTerminar();
     });
   }
@@ -271,224 +193,61 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
     _pulseCtrl.dispose();
     _floatCtrl.dispose();
     _saidaTimer?.cancel();
+    _antiTravamento?.cancel();
     super.dispose();
   }
 
   Future<void> _carregarDados() async {
     await Future.wait([
-      _buscarClima(),
-      _buscarFrase(),
+      WeatherService.instance.obter().then((c) => _clima = c ?? _clima),
       _buscarNoticia(),
-      _carregarFotoDoDia(),
+      FotosService.instance.fotoDoDia().then((f) => _fotoDoDia = f),
     ]);
-    if (mounted) {
-      setState(() => _carregando = false);
-      _iniciarSaida();
-    }
-  }
-
-  // ── Clima: tenta cache antes de ir à internet (válido por 20min) ─────────
-  Future<void> _buscarClima() async {
-    const chave = 'bom_dia_clima';
-
-    // 1. Tenta usar dados em cache, se ainda válidos
-    final cache = await CacheManager.instance
-        .obter<Map<String, dynamic>>(chave, validade: CacheValidade.climaAtual);
-    if (cache != null) {
-      _aplicarDadosClima(cache);
-      return; // não bate na internet — já está pronto
-    }
-
-    // 2. Cache vazio ou expirado: busca de fato
-    try {
-      final url = Uri.parse(
-        'https://api.open-meteo.com/v1/forecast'
-        '?latitude=$_lat&longitude=$_lon'
-        '&current=temperature_2m,apparent_temperature,weather_code'
-        '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max'
-        '&timezone=America%2FSao_Paulo',
-      );
-      final res = await http.get(url).timeout(const Duration(seconds: 6));
-      if (res.statusCode == 200) {
-        final d = jsonDecode(res.body) as Map<String, dynamic>;
-        _aplicarDadosClima(d);
-        await CacheManager.instance.salvar(chave, d); // salva pra próxima vez
-      }
-    } catch (_) {}
-  }
-
-  void _aplicarDadosClima(Map<String, dynamic> d) {
     if (!mounted) return;
-    setState(() {
-      _tempAtual = (d['current']['temperature_2m'] as num?)?.round() ?? 22;
-      _sensacao = (d['current']['apparent_temperature'] as num?)?.round() ?? 21;
-      _weatherCode = (d['current']['weather_code'] as int?) ?? 0;
-      _tempMax = (d['daily']['temperature_2m_max'][0] as num?)?.round() ?? 26;
-      _tempMin = (d['daily']['temperature_2m_min'][0] as num?)?.round() ?? 16;
-      _probChuva =
-          (d['daily']['precipitation_probability_max'][0] as num?)?.toInt() ??
-              0;
-    });
+    setState(() => _carregando = false);
+    _iniciarSaida();
   }
 
-  // ── Frase do dia: banco curado em português, sem depender de API externa
-  // que só retorna em inglês (ZenQuotes não tem opção de idioma). Chave
-  // inclui a data para trocar sozinha à meia-noite (mesmo fix da foto).
-  Future<void> _buscarFrase() async {
-    final hoje = DateTime.now();
-    final chave = 'bom_dia_frase_${hoje.year}_${hoje.month}_${hoje.day}';
-
-    final cache = await CacheManager.instance
-        .obter<String>(chave, validade: const Duration(hours: 25));
-    if (cache != null && cache.isNotEmpty) {
-      if (mounted) setState(() => _frase = cache);
-      return;
-    }
-
-    const frasesPtBr = [
-      '"Comece cada dia com um sorriso e termine com alegria." — Anônimo',
-      '"O segredo é começar. Isso é tudo." — Mark Twain',
-      '"Cada amanhecer é uma nova oportunidade de mudar sua vida." — Anônimo',
-      '"Acredite que você pode — e você já está na metade do caminho." — Theodore Roosevelt',
-      '"Só se pode alcançar um grande êxito quando nos mantemos fiéis a nós mesmos." — Friedrich Nietzsche',
-      '"A persistência é o caminho do êxito." — Charles Chaplin',
-      '"Não é o quanto fazemos, mas quanto amor colocamos no que fazemos." — Madre Teresa de Calcutá',
-      '"O otimista vê a oportunidade em toda dificuldade." — Winston Churchill',
-      '"Tudo o que um sonho precisa para ser realizado é alguém que acredite que ele possa ser realizado." — Roberto Shinyashiki',
-      '"Que os vossos esforços desafiem as impossibilidades, lembrai-vos de que as grandes coisas do homem foram conquistadas do que parecia impossível." — Charles Chaplin',
-      '"A vida é a arte do encontro, embora haja tanto desencontro pela vida." — Vinícius de Moraes',
-      '"Feliz aquele que transfere o que sabe e aprende o que ensina." — Cora Coralina',
-      '"Não sei se a vida é curta ou longa para nós, mas sei que nada do que vivemos tem sentido, se não tocarmos o coração das pessoas." — Cora Coralina',
-      '"Que darei eu, ó Senhor, em troca de tantos bens que me haveis dado?" — Santa Teresa de Ávila',
-      '"O que vale na vida não é o ponto de partida e sim a caminhada." — Cora Coralina',
-      '"Bom mesmo é ir à luta com determinação, abraçar a vida com paixão, perder com classe e vencer com ousadia." — Charles Chaplin',
-      '"Não temos mais tempo de sermos os mesmos." — Paulo Freire',
-      '"Toda a nossa ciência, comparada com a realidade, é primitiva e infantil — e, no entanto, é a coisa mais preciosa que temos." — Albert Einstein',
-      '"Que os dias difíceis te ensinem, e os bons te façam grato." — Anônimo',
-      '"Comece fazendo o que é necessário, depois o que é possível, e de repente você estará fazendo o impossível." — São Francisco de Assis',
-    ];
-    final idx = hoje.difference(DateTime(hoje.year)).inDays % frasesPtBr.length;
-    final frase = frasesPtBr[idx];
-    if (mounted) setState(() => _frase = frase);
-    await CacheManager.instance.salvar(chave, frase);
-  }
-
-  // ── Notícia: cache válido por 1h — texto e imagem juntos no mesmo pacote ──
   Future<void> _buscarNoticia() async {
-    const chave = 'bom_dia_noticia';
-
-    final cache = await CacheManager.instance
-        .obter<Map<String, dynamic>>(chave, validade: CacheValidade.noticias);
-    if (cache != null) {
-      if (mounted) {
-        setState(() {
-          _noticiaTitle = cache['title'] ?? '';
-          _noticiaDesc = cache['desc'] ?? '';
-          _noticiaImg = cache['img'] ?? '';
-        });
-      }
-      return; // já tem notícia fresca — não bate no RSS de novo
-    }
-
-    const feeds = [
-      'https://g1.globo.com/rss/g1/',
-      'https://g1.globo.com/rss/g1/politica/',
-      'https://g1.globo.com/rss/g1/economia/',
-    ];
-    for (final feedUrl in feeds) {
-      try {
-        final res = await http
-            .get(Uri.parse(feedUrl))
-            .timeout(const Duration(seconds: 8));
-        if (res.statusCode == 200) {
-          final doc = XmlDocument.parse(utf8.decode(res.bodyBytes));
-          final itens = doc.findAllElements('item');
-          if (itens.isNotEmpty) {
-            final node = itens.first;
-            final descRaw = node.findElements('description').first.innerText;
-            final img =
-                RegExp(r'src="([^"]+)"').firstMatch(descRaw)?.group(1) ?? '';
-            final desc =
-                descRaw.replaceAll(RegExp(r'<[^>]*>|&nbsp;'), '').trim();
-            final title = node.findElements('title').first.innerText.trim();
-            // O RSS do G1 às vezes traz só a categoria (ex: "Idosos") como
-            // descrição — texto curto demais para ser um resumo de verdade.
-            // Nesse caso, ignoramos e deixamos o card mostrar o fallback.
-            final descUtil = desc.length >= 40 ? desc : '';
-            final descCortada = descUtil.length > 160
-                ? '${descUtil.substring(0, 157)}...'
-                : descUtil;
-
-            if (mounted) {
-              setState(() {
-                _noticiaTitle = title;
-                _noticiaImg = img;
-                _noticiaDesc = descCortada;
-              });
-            }
-            // Salva o pacote completo — próxima troca de tela usa isso direto
-            await CacheManager.instance.salvar(chave, {
-              'title': title,
-              'desc': descCortada,
-              'img': img,
-            });
-            return; // sucesso — interrompe o loop de feeds
-          }
-        }
-      } catch (e) {
-        debugPrint('TelaBomDia notícia ($feedUrl): $e');
-      }
-    }
-    // Todos os feeds falharam
-    if (mounted) {
-      setState(() {
-        _noticiaTitle = 'Sem conexão com as notícias';
-        _noticiaDesc =
-            'Verifique sua internet para ver a notícia principal do dia.';
-      });
-    }
+    final r = await NewsService.instance.buscar(
+      const [FonteRss('https://g1.globo.com/rss/g1/', 'G1')],
+      validade: const Duration(hours: 1),
+    );
+    // O RSS do G1 às vezes traz só uma palavra como descrição — prefere
+    // uma notícia com resumo de verdade.
+    _noticia = r.noticias.where((n) => n.descricao.length >= 40).firstOrNull ??
+        r.noticias.firstOrNull;
   }
 
-  // ── Foto do Dia: chave inclui a data, então vira sozinha à meia-noite ────
-  // (Bug corrigido: antes a validade era "24h após salvar", então se você
-  // visse a foto ontem às 8h, ela só trocava hoje às 8h — não na virada do
-  // dia. Agora a chave do cache muda automaticamente todo dia civil.)
-  Future<void> _carregarFotoDoDia() async {
-    final hoje = DateTime.now();
-    final chave = 'bom_dia_foto_${hoje.year}_${hoje.month}_${hoje.day}';
-
-    final cache = await CacheManager.instance
-        .obter<String>(chave, validade: const Duration(hours: 25));
-    if (cache != null && cache.isNotEmpty && await File(cache).exists()) {
-      if (mounted) setState(() => _fotoDoDia = cache);
-      return; // já sabemos qual é a foto de hoje — não relista a pasta
-    }
-
-    try {
-      final diretorio = Directory('/storage/emulated/0/Pictures/MlionDroid');
-      if (!await diretorio.exists()) return;
-
-      final arquivos = diretorio.listSync();
-      final caminhos = arquivos
-          .where((item) =>
-              item.path.toLowerCase().endsWith('.jpg') ||
-              item.path.toLowerCase().endsWith('.png') ||
-              item.path.toLowerCase().endsWith('.jpeg'))
-          .map((item) => item.path)
-          .toList();
-
-      if (caminhos.isEmpty) return;
-
-      // Dia do ano garante uma foto diferente por dia, ciclando pela pasta
-      final diaDoAno = hoje.difference(DateTime(hoje.year)).inDays;
-      final idx = diaDoAno % caminhos.length;
-      final escolhida = caminhos[idx];
-
-      if (mounted) setState(() => _fotoDoDia = escolhida);
-      await CacheManager.instance.salvar(chave, escolhida);
-    } catch (e) {
-      debugPrint('TelaBomDia foto do dia: $e');
-    }
+  void _abrirNoticia() {
+    final n = _noticia;
+    if (n == null) return;
+    _saidaTimer?.cancel();
+    final web = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..loadRequest(Uri.parse(n.link));
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(24),
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Column(
+          children: [
+            ListTile(
+              title: Text(n.titulo, maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+            ),
+            Expanded(child: WebViewWidget(controller: web)),
+          ],
+        ),
+      ),
+    ).whenComplete(() {
+      if (mounted) _iniciarSaida();
+    });
   }
 
   void _iniciarSaida() {
@@ -497,7 +256,7 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
         ? _duracaoLongo
         : _duracaoCurto;
     _saidaTimer?.cancel();
-    _saidaTimer = Timer(Duration(seconds: seg), () {
+    _saidaTimer = Timer(Duration(seconds: seg.clamp(5, 600)), () {
       if (mounted) widget.aoTerminar();
     });
   }
@@ -512,71 +271,57 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
   // ─── BUILD ────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    if (_foraDoHorario) return const SizedBox.shrink();
     final r = R(context);
     final theme = _climaTheme;
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: AnimatedBuilder(
-        animation: Listenable.merge([_bgCtrl, _floatCtrl]),
-        builder: (context, _) {
-          return Stack(
-            children: [
-              // ── Fundo dinâmico ─────────────────────────────────────────
-              Positioned.fill(
-                child: CustomPaint(
-                  painter:
-                      _FundoClimaticoPainter(t: _bgCtrl.value, theme: theme),
+      body: Stack(
+        children: [
+          // Fundo e partículas são pintados com `repaint:` dentro de um
+          // RepaintBoundary — a animação NÃO reconstrói o conteúdo da tela
+          // (antes a tela inteira, com imagens e textos, era refeita 60x/s).
+          Positioned.fill(
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: _FundoClimaticoPainter(anim: _bgCtrl, theme: theme),
+                foregroundPainter: _ParticulasPainter(
+                  particulas: _particulas,
+                  anim: _floatCtrl,
+                  theme: theme,
                 ),
               ),
-
-              // ── Partículas (estrelas, gotas, nuvens) ───────────────────
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _ParticulasPainter(
-                    particulas: _particulas,
-                    t: _floatCtrl.value,
-                    theme: theme,
-                    weatherCode: _weatherCode,
-                  ),
+            ),
+          ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.10),
+                    Colors.black.withValues(alpha: 0.45),
+                    Colors.black.withValues(alpha: 0.75),
+                  ],
+                  stops: const [0.0, 0.55, 1.0],
                 ),
               ),
-
-              // ── Gradiente de legibilidade (base) ───────────────────────
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.10),
-                        Colors.black.withValues(alpha: 0.45),
-                        Colors.black.withValues(alpha: 0.75),
-                      ],
-                      stops: const [0.0, 0.55, 1.0],
-                    ),
-                  ),
+            ),
+          ),
+          if (_carregando)
+            _buildCarregando(r, theme)
+          else
+            SafeArea(
+              child: FadeTransition(
+                opacity: _entradaAnim,
+                child: LayoutBuilder(
+                  builder: (context, constraints) =>
+                      _buildConteudo(r, theme, constraints),
                 ),
               ),
-
-              // ── Conteúdo ───────────────────────────────────────────────
-              if (_carregando)
-                _buildCarregando(r, theme)
-              else
-                SafeArea(
-                  child: FadeTransition(
-                    opacity: _entradaAnim,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) =>
-                          _buildConteudo(r, theme, constraints),
-                    ),
-                  ),
-                ),
-            ],
-          );
-        },
+            ),
+        ],
       ),
     );
   }
@@ -687,7 +432,9 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
     final fsAno = fsData * 0.55;
     final fsSemana = math.min(r.fs(12), sh * 0.024);
 
-    return Container(
+    return ValueListenableBuilder<DateTime>(
+      valueListenable: InfoHub.instance.relogio,
+      builder: (context, agora, _) => Container(
       padding: EdgeInsets.symmetric(horizontal: r.sp(14), vertical: r.sp(8)),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.18),
@@ -708,7 +455,7 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
                   size: fsData * 0.6),
               SizedBox(width: r.sp(7)),
               Text(
-                _dataNumerica,
+                _dataNumerica(agora),
                 style: GoogleFonts.poppins(
                   color: Colors.white,
                   fontSize: fsData,
@@ -719,7 +466,7 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
               ),
               SizedBox(width: r.sp(4)),
               Text(
-                _anoFormatado,
+                '${agora.year}',
                 style: GoogleFonts.poppins(
                   color: Colors.white.withValues(alpha: 0.55),
                   fontSize: fsAno,
@@ -730,7 +477,7 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
           ),
           SizedBox(height: r.sp(2)),
           Text(
-            _diaSemanaFormatado,
+            diaSemanaLongo(agora),
             style: GoogleFonts.poppins(
               color: Colors.white.withValues(alpha: 0.65),
               fontSize: fsSemana,
@@ -739,6 +486,7 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -746,7 +494,9 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
   Widget _buildRelogioCard(R r, _ClimaTheme theme, double sh) {
     final fsHora = math.min(r.fs(30), sh * 0.065);
 
-    return Container(
+    return ValueListenableBuilder<DateTime>(
+      valueListenable: InfoHub.instance.relogio,
+      builder: (context, agora, _) => Container(
       padding: EdgeInsets.symmetric(horizontal: r.sp(16), vertical: r.sp(8)),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.18),
@@ -772,7 +522,7 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
             ),
           ),
           Text(
-            _horaFormatada,
+            horaMinuto(agora),
             style: GoogleFonts.orbitron(
               color: Colors.white,
               fontSize: fsHora,
@@ -788,6 +538,7 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -883,7 +634,8 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
         final base = math.min(alturaBlocoPrincipal * 0.92, boxW * 0.42);
 
         final fsIcone = base * 0.95;
-        final fsTemp = base * 0.90;
+        // "Tamanho da temperatura" das Configurações (72 = padrão).
+        final fsTemp = base * 0.90 * (_tamanhoTemp / 72).clamp(0.7, 1.4);
         final fsGrau = fsTemp * 0.36;
         final fsMinMax = base * 0.28;
         final fsRodape = (alturaRodape * 0.26).clamp(10.0, 15.0);
@@ -1179,14 +931,14 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
 
   // ── Notícia — com imagem ao lado, igual a TelaBrasil ──────────────────────
   Widget _buildNoticiaCard(R r, _ClimaTheme theme) {
-    final temImagem = _noticiaImg.isNotEmpty;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(
-          sigmaX: PerformanceManager.instance.sigmaBlur(4),
-          sigmaY: PerformanceManager.instance.sigmaBlur(4),
-        ),
+    final n = _noticia;
+    final temImagem = n != null && n.imagem.isNotEmpty;
+    // Sem BackdropFilter: o fundo é animado e o blur seria refeito a cada
+    // quadro. O fundo escuro translúcido já garante a leitura.
+    return GestureDetector(
+      onTap: _abrirNoticia,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
         child: Container(
           width: double.infinity,
           decoration: BoxDecoration(
@@ -1206,7 +958,7 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
                   child: SizedBox(
                     width: r.w(0.20),
                     child: CachedNetworkImage(
-                      imageUrl: _noticiaImg,
+                      imageUrl: n.imagem,
                       fit: BoxFit.cover,
                       placeholder: (_, __) => Container(
                           color: Colors.white.withValues(alpha: 0.05)),
@@ -1272,9 +1024,9 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
                       ),
                       SizedBox(height: r.sp(8)),
                       Text(
-                        _noticiaTitle.isEmpty
-                            ? 'Carregando notícias...'
-                            : _noticiaTitle,
+                        n == null
+                            ? 'Sem conexão com as notícias'
+                            : n.titulo,
                         style: GoogleFonts.poppins(
                           color: Colors.white,
                           fontSize: r.fs(17),
@@ -1289,11 +1041,11 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
                       ),
                       SizedBox(height: r.sp(6)),
                       Text(
-                        _noticiaDesc.isNotEmpty
-                            ? _noticiaDesc
-                            : (_noticiaTitle.isEmpty
-                                ? 'Buscando as principais notícias do dia...'
-                                : 'Toque para saber mais sobre essa notícia no G1.'),
+                        n == null
+                            ? 'Verifique a internet para ver a notícia do dia.'
+                            : (n.descricao.length >= 40
+                                ? n.descricao
+                                : 'Toque para ler a notícia completa.'),
                         style: GoogleFonts.poppins(
                           color: Colors.white.withValues(alpha: 0.62),
                           fontSize: r.fs(13),
@@ -1366,7 +1118,22 @@ class _ClimaTheme {
     required this.tipo,
   });
 
-  factory _ClimaTheme.fromCode(int code, int probChuva) {
+  factory _ClimaTheme.fromCode(int code, int probChuva, {bool ehDia = true}) {
+    // Antes do sol nascer (a tela aparece a partir das 4h) não faz sentido
+    // mostrar sol: céu limpo ou nublado à noite vira o tema noturno.
+    if (!ehDia && code <= 3 && probChuva < 70) {
+      return const _ClimaTheme(
+        fundoCores: [
+          Color(0xFF0B1026),
+          Color(0xFF141E3C),
+          Color(0xFF1B2A4A),
+          Color(0xFF2A3B66)
+        ],
+        corDestaque: Color(0xFFFFE082),
+        emoji: '🌙',
+        tipo: _TipoTempo.noite,
+      );
+    }
     if (code >= 51 || probChuva >= 70) {
       return const _ClimaTheme(
         fundoCores: [
@@ -1420,19 +1187,21 @@ class _ClimaTheme {
   }
 }
 
-enum _TipoTempo { sol, solComNuvens, nublado, chuva }
+enum _TipoTempo { sol, solComNuvens, nublado, chuva, noite }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Painter: fundo dinâmico
 // ═══════════════════════════════════════════════════════════════════════════
 class _FundoClimaticoPainter extends CustomPainter {
-  final double t;
+  final Animation<double> anim;
   final _ClimaTheme theme;
 
-  const _FundoClimaticoPainter({required this.t, required this.theme});
+  _FundoClimaticoPainter({required this.anim, required this.theme})
+      : super(repaint: anim);
 
   @override
   void paint(Canvas canvas, Size s) {
+    final t = anim.value;
     final lerp = (math.sin(t * math.pi) + 1) / 2;
     final c0 = Color.lerp(theme.fundoCores[0], theme.fundoCores[1], lerp)!;
     final c1 = Color.lerp(theme.fundoCores[2], theme.fundoCores[3], lerp)!;
@@ -1463,10 +1232,6 @@ class _FundoClimaticoPainter extends CustomPainter {
 
   // ── Nuvens orgânicas, formadas por múltiplos círculos sobrepostos ────────
   void _pintarNuvens(Canvas canvas, Size s, {required double intensidade}) {
-    final cloudPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.10 * intensidade)
-      ..style = PaintingStyle.fill;
-
     void desenharNuvem(
         double cx, double cy, double escala, double opacidadeMult) {
       final p = Paint()
@@ -1487,9 +1252,9 @@ class _FundoClimaticoPainter extends CustomPainter {
     }
 
     // Três nuvens em profundidades e velocidades diferentes — leve parallax
-    final x1 = ((t * 0.06) % 1.2 - 0.1) * s.width;
-    final x2 = ((t * 0.04 + 0.4) % 1.2 - 0.1) * s.width;
-    final x3 = ((t * 0.05 + 0.75) % 1.2 - 0.1) * s.width;
+    final x1 = ((anim.value * 0.06) % 1.2 - 0.1) * s.width;
+    final x2 = ((anim.value * 0.04 + 0.4) % 1.2 - 0.1) * s.width;
+    final x3 = ((anim.value * 0.05 + 0.75) % 1.2 - 0.1) * s.width;
 
     desenharNuvem(x1, s.height * 0.14, 1.6, 1.0);
     desenharNuvem(x2, s.height * 0.24, 1.1, 0.7);
@@ -1546,7 +1311,7 @@ class _FundoClimaticoPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_FundoClimaticoPainter old) =>
-      old.t != t || old.theme.tipo != theme.tipo;
+      old.anim != anim || old.theme.tipo != theme.tipo;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1554,19 +1319,18 @@ class _FundoClimaticoPainter extends CustomPainter {
 // ═══════════════════════════════════════════════════════════════════════════
 class _ParticulasPainter extends CustomPainter {
   final List<_Particula> particulas;
-  final double t;
+  final Animation<double> anim;
   final _ClimaTheme theme;
-  final int weatherCode;
 
-  const _ParticulasPainter({
+  _ParticulasPainter({
     required this.particulas,
-    required this.t,
+    required this.anim,
     required this.theme,
-    required this.weatherCode,
-  });
+  }) : super(repaint: anim);
 
   @override
   void paint(Canvas canvas, Size s) {
+    final t = anim.value;
     final p = Paint()..style = PaintingStyle.fill;
 
     for (final pt in particulas) {
@@ -1612,7 +1376,8 @@ class _ParticulasPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_ParticulasPainter old) => old.t != t;
+  bool shouldRepaint(_ParticulasPainter old) =>
+      old.anim != anim || old.theme.tipo != theme.tipo;
 }
 
 class _Particula {

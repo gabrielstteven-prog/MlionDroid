@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -33,10 +34,14 @@ class InfoAtualizacao {
   final String versao;
   final String changelog;
   final String urlApk;
+  final int tamanho; // bytes, informado pelo GitHub (0 = desconhecido)
+  final String? sha256; // hex, campo "digest" do GitHub quando existe
   InfoAtualizacao({
     required this.versao,
     required this.changelog,
     required this.urlApk,
+    this.tamanho = 0,
+    this.sha256,
   });
 }
 
@@ -136,7 +141,7 @@ class UpdateManager extends ChangeNotifier {
       }
 
       final data = json.decode(res.body) as Map<String, dynamic>;
-      final tag = (data['tag_name'] as String? ?? '').replaceFirst('v', '');
+      final tag = (data['tag_name'] as String? ?? '').replaceFirst(RegExp(r'^v'), '');
       final assets = (data['assets'] as List?) ?? [];
 
       final apkAsset = assets.cast<Map<String, dynamic>>().firstWhere(
@@ -160,8 +165,10 @@ class UpdateManager extends ChangeNotifier {
         versao: tag,
         changelog: (data['body'] as String? ?? '').trim(),
         urlApk: apkAsset['browser_download_url'] as String,
+        tamanho: (apkAsset['size'] as num?)?.toInt() ?? 0,
+        sha256: _extrairSha256(apkAsset['digest'] as String?),
       );
-      _disponivel = _versaoMaisNova(tag, _versaoInstalada);
+      _disponivel = versaoMaisNova(tag, _versaoInstalada);
     } catch (e) {
       debugPrint('UpdateManager.verificar: $e');
     } finally {
@@ -170,9 +177,14 @@ class UpdateManager extends ChangeNotifier {
     }
   }
 
+  static String? _extrairSha256(String? digest) {
+    if (digest == null || !digest.startsWith('sha256:')) return null;
+    return digest.substring(7).toLowerCase();
+  }
+
   /// Compara duas versões no formato "1.2.3". Retorna true se [remota] for
   /// mais nova que [local].
-  bool _versaoMaisNova(String remota, String local) {
+  static bool versaoMaisNova(String remota, String local) {
     List<int> partes(String v) => v
         .split('.')
         .map((p) => int.tryParse(p.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0)
@@ -187,48 +199,101 @@ class UpdateManager extends ChangeNotifier {
     return false;
   }
 
-  /// Baixa o .apk da release e, assim que terminar, abre a tela padrão de
-  /// instalação do Android (que exige 1 toque de confirmação do usuário —
-  /// isso não dá pra pular, é regra do sistema).
+  /// Mensagem do último erro de download (mostrada na folha de atualização).
+  String? erroDownload;
+
+  /// Baixa o .apk da release e abre a tela de instalação do Android (que
+  /// exige 1 toque de confirmação — regra do sistema).
+  ///
+  /// Verificações (antes não existiam): resposta HTTP 200, tamanho igual ao
+  /// informado pelo GitHub e, quando disponível, o SHA-256 do arquivo. Um
+  /// download corrompido ou uma página de erro nunca chega ao instalador.
   Future<void> baixarEInstalar() async {
-    if (_info == null || _baixando) return;
+    final info = _info;
+    if (info == null || _baixando) return;
     _baixando = true;
     _progresso = 0.0;
+    erroDownload = null;
     notifyListeners();
 
+    final client = http.Client();
+    File? file;
     try {
-      final dir =
-          await getExternalStorageDirectory() ?? await getTemporaryDirectory();
-      final caminho = '${dir.path}/mliondroid_update_${_info!.versao}.apk';
-      final file = File(caminho);
+      final dir = await getExternalStorageDirectory() ?? await getTemporaryDirectory();
+      await _apagarApksAntigos(dir);
+      final caminho = '${dir.path}/mliondroid_update_${info.versao}.apk';
+      file = File(caminho);
 
-      final request = http.Request('GET', Uri.parse(_info!.urlApk));
-      final response = await http.Client().send(request);
-      final total = response.contentLength ?? 0;
-      int recebido = 0;
+      final response = await client
+          .send(http.Request('GET', Uri.parse(info.urlApk)))
+          .timeout(const Duration(seconds: 30));
+      if (response.statusCode != 200) {
+        throw Exception('servidor respondeu ${response.statusCode}');
+      }
+      final total = response.contentLength ?? info.tamanho;
+      var recebido = 0;
+      var ultimoPercentual = -1;
 
       final sink = file.openWrite();
-      await response.stream.listen((chunk) {
-        sink.add(chunk);
-        recebido += chunk.length;
-        if (total > 0) {
-          _progresso = recebido / total;
-          notifyListeners();
+      final coletor = _ColetorSha256();
+      final hasher = sha256.startChunkedConversion(coletor);
+      try {
+        await for (final chunk in response.stream.timeout(const Duration(seconds: 60))) {
+          sink.add(chunk);
+          hasher.add(chunk);
+          recebido += chunk.length;
+          if (total > 0) {
+            _progresso = recebido / total;
+            // Notifica a cada 1% (antes era a cada pedaço recebido).
+            final pct = (_progresso * 100).floor();
+            if (pct != ultimoPercentual) {
+              ultimoPercentual = pct;
+              notifyListeners();
+            }
+          }
         }
-      }).asFuture<void>();
-      await sink.close();
+      } finally {
+        await sink.close();
+        hasher.close();
+      }
+
+      if (info.tamanho > 0 && recebido != info.tamanho) {
+        throw Exception('arquivo incompleto ($recebido de ${info.tamanho} bytes)');
+      }
+      final esperado = info.sha256;
+      if (esperado != null && coletor.valor?.toString() != esperado) {
+        throw Exception('arquivo corrompido (SHA-256 não confere)');
+      }
 
       _caminhoApkBaixado = caminho;
-      _baixando = false;
       _baixado = true;
+      _baixando = false;
       notifyListeners();
-
       await OpenFilex.open(caminho);
     } catch (e) {
       debugPrint('UpdateManager.baixarEInstalar: $e');
+      erroDownload = 'Falha no download: $e. Tente de novo.';
       _baixando = false;
+      try {
+        if (file != null && await file.exists()) await file.delete();
+      } catch (_) {}
       notifyListeners();
+    } finally {
+      client.close();
     }
+  }
+
+  /// Remove APKs de versões anteriores que ficavam acumulando no tablet.
+  Future<void> _apagarApksAntigos(Directory dir) async {
+    try {
+      await for (final f in dir.list()) {
+        if (f is File &&
+            f.uri.pathSegments.last.startsWith('mliondroid_update_') &&
+            f.path.endsWith('.apk')) {
+          await f.delete();
+        }
+      }
+    } catch (_) {}
   }
 
   /// Caso o usuário tenha fechado a tela de instalação sem confirmar,
@@ -239,10 +304,17 @@ class UpdateManager extends ChangeNotifier {
     }
   }
 
-  /// Esconde o ícone/banner por agora (volta a aparecer na próxima
-  /// verificação automática, já que ainda há uma versão mais nova).
+  /// Esconde o ícone/banner por agora (volta na próxima verificação).
   void dispensar() {
     _disponivel = false;
     notifyListeners();
   }
+}
+
+class _ColetorSha256 implements Sink<Digest> {
+  Digest? valor;
+  @override
+  void add(Digest data) => valor = data;
+  @override
+  void close() {}
 }
