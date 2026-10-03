@@ -4,6 +4,14 @@
     <!-- Necessária para o app abrir a tela de instalação do APK baixado
          (sistema de atualização direto pelo GitHub, sem Play Store) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Modo Noite: acender a tela de novo no fim do horário de descanso. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Assistente: ouvir o comando de voz dentro do app (sem a janela do Google). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Descanso inteligente: serviço que vigia os sensores de luz e proximidade
+         com a tela apagada. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- As fotos ficam na pasta privada do app (copiadas pelo seletor de
          arquivos), então não é mais preciso acesso total ao armazenamento. -->
 
@@ -28,6 +36,27 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <service
+            android:name=".DescansoService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Acender a tela do painel de parede quando a luz do cômodo acende ou alguém se aproxima, durante o horário de descanso da tela." />
+        </service>
+        <!-- Permite apagar a tela no horário de descanso (só "force-lock"). -->
+        <receiver
+            android:name=".AdminTela"
+            android:exported="true"
+            android:label="MlionDroid: apagar a tela à noite"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/admin_tela" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

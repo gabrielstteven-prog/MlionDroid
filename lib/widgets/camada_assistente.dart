@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../design/tema.dart';
 import '../services/assistente_service.dart';
 import '../services/jarvis_service.dart';
+import '../sistema.dart';
 
 /// Camada que fica por cima de todas as telas:
 ///  • balão do assistente (o que você falou e a resposta);
@@ -123,10 +124,13 @@ class _OrbeJarvisState extends State<OrbeJarvis>
       child: SizedBox.square(
         dimension: widget.tamanho,
         child: AnimatedBuilder(
-          animation: _c,
+          animation: Listenable.merge([_c, Sistema.volumeVoz]),
           builder: (_, __) => CustomPaint(
             painter: _PintorOrbe(
-                _c.value, widget.estado, _corDoEstado(widget.estado)),
+                _c.value,
+                widget.estado,
+                _corDoEstado(widget.estado),
+                widget.estado == EstadoAssistente.ouvindo ? Sistema.volumeVoz.value : 0),
           ),
         ),
       ),
@@ -138,7 +142,8 @@ class _PintorOrbe extends CustomPainter {
   final double t; // 0..1, volta a cada 6 s
   final EstadoAssistente estado;
   final Color cor;
-  _PintorOrbe(this.t, this.estado, this.cor);
+  final double volume; // 0..1, voz de quem fala (só ouvindo)
+  _PintorOrbe(this.t, this.estado, this.cor, this.volume);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -153,7 +158,7 @@ class _PintorOrbe extends CustomPainter {
       EstadoAssistente.pensando => 3.0,
       EstadoAssistente.parado => 2.0,
     };
-    final pulso = (math.sin(ang * freq) + 1) / 2; // 0..1
+    final pulso = math.max((math.sin(ang * freq) + 1) / 2 * (1 - volume), volume); // 0..1
 
     // Halo
     canvas.drawCircle(
@@ -232,7 +237,7 @@ class _PintorOrbe extends CustomPainter {
 
   @override
   bool shouldRepaint(_PintorOrbe old) =>
-      old.t != t || old.estado != estado || old.cor != cor;
+      old.t != t || old.estado != estado || old.cor != cor || old.volume != volume;
 }
 
 class _AlarmeTela extends StatelessWidget {

@@ -63,6 +63,27 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
           ),
           const SizedBox(height: 16),
           _campo('nome', 'Nome do assistente', 'Jarvis', Icons.smart_toy_rounded),
+          Text('Personalidade', style: _txt(15, peso: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text('Também dá para trocar falando: "modo agressivo", "modo sincerão"...',
+              style: _txt(12.5, cor: Colors.white38)),
+          const SizedBox(height: 10),
+          Wrap(spacing: 10, runSpacing: 10, children: [
+            for (final p in JarvisService.personalidades)
+              Tooltip(
+                message: p.descricao,
+                child: ChoiceChip(
+                  label: Text(p.nome),
+                  selected: JarvisService.instance.personalidadeAtual.id == p.id,
+                  onSelected: (_) =>
+                      setState(() => _cfg.set('assistente', 'personalidade', p.id)),
+                ),
+              ),
+          ]),
+          const SizedBox(height: 6),
+          Text(JarvisService.instance.personalidadeAtual.descricao,
+              style: _txt(13, cor: Colors.white54)),
+          const SizedBox(height: 16),
           _campo('gemini_chave', 'Chave do Gemini',
               'aistudio.google.com → Get API key', Icons.key_rounded,
               secreto: true),
@@ -114,7 +135,8 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
               children: [
                 for (final v in _vozes)
                   ChoiceChip(
-                    label: Text(v.nome),
+                    // "padrão" = voz da própria ElevenLabs: funciona no plano gratuito.
+                    label: Text(v.tipo == 'premade' ? '${v.nome} (padrão)' : v.nome),
                     selected: _cfg.getString('assistente', 'elevenlabs_voz', '') == v.id,
                     onSelected: (_) => setState(
                         () => _cfg.set('assistente', 'elevenlabs_voz', v.id)),
@@ -226,9 +248,12 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
     if (!mounted) return;
     setState(() {
       _testandoVoz = false;
-      _statusVoz = premium
-          ? 'Se ouviu a voz nova, está tudo certo. Se ouviu a voz do Android, a chave ou a voz não funcionaram.'
-          : 'Sem chave/voz da ElevenLabs: usando a voz do Android.';
+      final erro = VozService.instance.ultimoErro;
+      _statusVoz = !premium
+          ? 'Sem chave/voz da ElevenLabs: usando a voz do Android.'
+          : erro.isEmpty
+              ? 'Voz premium funcionando.'
+              : erro;
     });
   }
 

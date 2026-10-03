@@ -1,13 +1,24 @@
 package com.example.flutter_application_1
 
 import android.app.Activity
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.Ringtone
 import android.media.RingtoneManager
+import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.Manifest
+import android.content.pm.PackageManager
+import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.view.WindowManager
 import java.util.Locale
@@ -20,6 +31,7 @@ class MainActivity : FlutterActivity() {
     private val CANAL_VOZ = "com.mlion_droid/speech"
     private val CANAL_SISTEMA = "com.mlion_droid/sistema"
     private val SPEECH_REQUEST_CODE = 100
+    private val EXTRA_ACORDAR = "mlion_acordar"
 
     private var speechResult: MethodChannel.Result? = null
 
@@ -28,13 +40,21 @@ class MainActivity : FlutterActivity() {
         // Painel de parede: a tela fica ligada por padrão. O Dart pode
         // desligar isso pelas Configurações (canal "sistema").
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (intent?.getBooleanExtra(EXTRA_ACORDAR, false) == true) acordarTela()
+    }
+
+    // O alarme do fim do Modo Noite reabre o app com este extra.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_ACORDAR, false)) acordarTela()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
 
-        MethodChannel(messenger, CANAL_VOZ).setMethodCallHandler { call, result ->
+        canalVoz = MethodChannel(messenger, CANAL_VOZ)
+        canalVoz!!.setMethodCallHandler { call, result ->
             when (call.method) {
                 "startListening" -> {
                     val language = call.argument<String>("language") ?: "pt-BR"
@@ -42,13 +62,23 @@ class MainActivity : FlutterActivity() {
                     // Se já havia um pedido pendente, encerra antes de abrir outro.
                     speechResult?.success("")
                     speechResult = result
-                    startSpeechRecognition(language, prompt)
+                    idiomaPendente = language
+                    promptPendente = prompt
+                    ouvirNoApp()
                 }
                 else -> result.notImplemented()
             }
         }
 
-        MethodChannel(messenger, CANAL_SISTEMA).setMethodCallHandler { call, result ->
+        canalSistema = MethodChannel(messenger, CANAL_SISTEMA)
+        // Sensor do descanso acendeu a tela: acorda o painel e avisa o Dart.
+        DescansoService.aoAcordar = { motivo ->
+            runOnUiThread {
+                acordarTela()
+                canalSistema?.invokeMethod("acordouPorSensor", motivo)
+            }
+        }
+        canalSistema!!.setMethodCallHandler { call, result ->
             when (call.method) {
                 "manterTelaLigada" -> {
                     val ligada = call.argument<Boolean>("ligada") ?: true
@@ -89,6 +119,36 @@ class MainActivity : FlutterActivity() {
                     val caminho = call.argument<String>("caminho") ?: ""
                     tocarAudio(caminho, result)
                 }
+                "adminAtivo" -> result.success(adminAtivo())
+                "pedirAdmin" -> {
+                    val i = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                        putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, componenteAdmin())
+                        putExtra(
+                            DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                            "Permite ao MlionDroid apagar a tela no horário de descanso. " +
+                                "Ele só usa a permissão de bloquear a tela."
+                        )
+                    }
+                    startActivity(i)
+                    result.success(null)
+                }
+                "desligarTela" -> {
+                    val acordarEm = call.argument<Number>("acordarEm")?.toLong() ?: 0L
+                    if (acordarEm > 0) agendarDespertar(acordarEm)
+                    val luz = call.argument<Boolean>("luz") ?: false
+                    val prox = call.argument<Boolean>("proximidade") ?: false
+                    if (luz || prox) DescansoService.iniciar(this, luz, prox)
+                    result.success(desligarTela())
+                }
+                "acordarTela" -> {
+                    DescansoService.parar(this)
+                    acordarTela()
+                    result.success(null)
+                }
+                "pararDescanso" -> {
+                    DescansoService.parar(this)
+                    result.success(null)
+                }
                 "tocarAlarme" -> {
                     tocarAlarme()
                     result.success(null)
@@ -100,6 +160,74 @@ class MainActivity : FlutterActivity() {
                 }
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    // ── Escuta dentro do app (SpeechRecognizer, sem a janela do Google) ──────
+    private var canalVoz: MethodChannel? = null
+    private var canalSistema: MethodChannel? = null
+    private var reconhecedor: SpeechRecognizer? = null
+    private var idiomaPendente = "pt-BR"
+    private var promptPendente = ""
+    private val PEDIDO_MICROFONE = 77
+
+    private fun ouvirNoApp() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            // Sem serviço de reconhecimento: usa a janela do Google mesmo.
+            startSpeechRecognition(idiomaPendente, promptPendente)
+            return
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), PEDIDO_MICROFONE)
+            return
+        }
+        reconhecedor?.destroy()
+        val r = SpeechRecognizer.createSpeechRecognizer(this)
+        reconhecedor = r
+        r.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) {}
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(rmsdB: Float) {
+                canalVoz?.invokeMethod("volume", rmsdB.toDouble())
+            }
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onEndOfSpeech() {}
+            override fun onError(error: Int) {
+                canalVoz?.invokeMethod("erro", error)
+                entregarFala("")
+            }
+            override fun onResults(results: Bundle?) {
+                val t = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull() ?: ""
+                entregarFala(t)
+            }
+            override fun onPartialResults(partial: Bundle?) {
+                val t = partial?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull() ?: ""
+                if (t.isNotBlank()) canalVoz?.invokeMethod("parcial", t)
+            }
+            override fun onEvent(eventType: Int, params: Bundle?) {}
+        })
+        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, idiomaPendente)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, idiomaPendente)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+        r.startListening(i)
+    }
+
+    private fun entregarFala(texto: String) {
+        reconhecedor?.destroy()
+        reconhecedor = null
+        speechResult?.success(texto)
+        speechResult = null
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PEDIDO_MICROFONE) {
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) ouvirNoApp()
+            else entregarFala("")
         }
     }
 
@@ -163,6 +291,64 @@ class MainActivity : FlutterActivity() {
         if (player != null) terminarAudio(true)
     }
 
+    // ── Descanso da tela (Modo Noite) ─────────────────────────────────────
+    private fun componenteAdmin() = ComponentName(this, AdminTela::class.java)
+
+    private fun adminAtivo(): Boolean {
+        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        return dpm.isAdminActive(componenteAdmin())
+    }
+
+    /** true = apagou na hora (admin ativo); false = só liberou o tempo de espera. */
+    private fun desligarTela(): Boolean {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Já deixa o painel pronto para aparecer por cima da tela de bloqueio
+        // quando um sensor acender a tela.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) setShowWhenLocked(true)
+        if (adminAtivo()) {
+            (getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager).lockNow()
+            return true
+        }
+        return false
+    }
+
+    // Alarme do Android como garantia: se o sistema congelar o app durante a
+    // noite, o alarme reabre o app na hora de acordar.
+    private fun agendarDespertar(quando: Long) {
+        val i = Intent(this, MainActivity::class.java).apply {
+            putExtra(EXTRA_ACORDAR, true)
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val pi = PendingIntent.getActivity(
+            this, 41, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val am = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, quando, pi)
+    }
+
+    private fun acordarTela() {
+        // Mostra o painel por cima da tela de bloqueio (sem pedir a senha para
+        // VER o painel; abrir outros apps continua pedindo).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+        }
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        @Suppress("DEPRECATION")
+        val wl = pm.newWakeLock(
+            PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+            "mliondroid:acordar"
+        )
+        wl.acquire(10_000)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
     // ── Alarme do temporizador ─────────────────────────────────────────────
     private var alarme: Ringtone? = null
 
@@ -179,6 +365,8 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         tts?.shutdown()
+        DescansoService.aoAcordar = null
+        reconhecedor?.destroy()
         pararAudio()
         alarme?.stop()
         super.onDestroy()

@@ -79,15 +79,26 @@ class VozService {
     if (premium && premiumConfigurado) {
       try {
         final arquivo = await _audioPremium(t);
-        if (arquivo != null && await Sistema.tocarAudio(arquivo.path)) return;
+        if (arquivo != null && await Sistema.tocarAudio(arquivo.path)) {
+          ultimoErro = '';
+          return;
+        }
+        ultimoErro = arquivo == null
+            ? 'Limite de voz do mês atingido. Usando a voz do Android.'
+            : 'Não consegui tocar o áudio da voz premium.';
       } catch (e) {
         debugPrint('Voz premium: $e');
+        ultimoErro = explicarErro('$e');
       }
     }
     await Sistema.falar(t);
   }
 
   Future<void> parar() => Sistema.pararFala();
+
+  /// Motivo da última falha da voz premium, em português (aparece no teste
+  /// das Configurações). Vazio quando a última fala premium deu certo.
+  String ultimoErro = '';
 
   Future<File?> _audioPremium(String texto) async {
     final dir = Directory('${(await getTemporaryDirectory()).path}/voz');
@@ -131,6 +142,21 @@ class VozService {
         f.deleteSync();
       }
     } catch (_) {}
+  }
+
+  /// Traduz o erro da ElevenLabs para algo que dá para resolver. Testada.
+  static String explicarErro(String e) {
+    if (e.contains('402') || e.contains('paid_plan_required') || e.contains('library voices')) {
+      return 'Essa voz é da biblioteca da comunidade: no plano gratuito ela não funciona '
+          'pelo app. Escolha uma voz padrão da ElevenLabs (ex.: Daniel, George) ou '
+          'assine um plano pago.';
+    }
+    if (e.contains('401')) return 'A chave da ElevenLabs foi recusada. Confira se colou a chave certa.';
+    if (e.contains('quota') || e.contains('429')) {
+      return 'A cota da ElevenLabs acabou ou está no limite. Usando a voz do Android.';
+    }
+    if (e.contains('404')) return 'Voz não encontrada. Toque em Carregar vozes e escolha de novo.';
+    return 'Sem resposta da ElevenLabs (internet?). Usando a voz do Android.';
   }
 
   /// Vozes da conta (para escolher nas Configurações).

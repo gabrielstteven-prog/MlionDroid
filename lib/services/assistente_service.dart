@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -33,6 +34,7 @@ enum TipoComando {
   data,
   resumo,
   abrirTela,
+  personalidade,
   desconhecido,
 }
 
@@ -41,9 +43,10 @@ class Comando {
   final Duration? duracao;
   final List<String> itens;
   final String? tela;
+  final String? personalidade; // id: mordomo, sincerao, agressivo, comediante
   final String textoOriginal;
   const Comando(this.tipo, this.textoOriginal,
-      {this.duracao, this.itens = const [], this.tela});
+      {this.duracao, this.itens = const [], this.tela, this.personalidade});
 }
 
 const _numeros = {
@@ -73,11 +76,16 @@ Comando interpretar(String falado) {
   if (f.isEmpty) return Comando(TipoComando.desconhecido, falado);
 
   // Temporizador: "timer de 10 minutos", "temporizador de meia hora"
-  final ehTimer = RegExp(r'\b(timer|temporizador|cronometro|alarme|despertador)\b').hasMatch(f);
+  // O reconhecimento de voz às vezes escreve "time"/"taimer" no lugar de
+  // "timer"; com uma duração junto ("time de um minuto") é temporizador.
+  final ehTimer = RegExp(r'\b(timer|taimer|time|temporizador|cronometro|cronometra|'
+          r'cronometrar|cronometre|alarme|despertador|contagem|conta|contar)\b')
+      .hasMatch(f);
   if (ehTimer && RegExp(r'\b(cancela|cancelar|para|parar|desliga|desligar)\b').hasMatch(f)) {
     return Comando(TipoComando.cancelarTemporizador, falado);
   }
-  if (ehTimer || RegExp(r'\b(me avisa|me avise) (em|daqui)').hasMatch(f)) {
+  if (ehTimer ||
+      RegExp(r'\b(me avisa|me avise|me lembra|me lembre)\b|\bdaqui a\b').hasMatch(f)) {
     final d = _duracao(f);
     if (d != null) return Comando(TipoComando.temporizador, falado, duracao: d);
   }
@@ -102,6 +110,20 @@ Comando interpretar(String falado) {
     if (itens.isNotEmpty) {
       return Comando(TipoComando.adicionarCompra, falado, itens: itens);
     }
+  }
+
+  // Personalidade: "modo agressivo", "fica sincerão", "volta ao modo normal"
+  final modo = RegExp(r'\b(?:modo|personalidade|fica|seja|vira)\s+(agressivo|bravo|sincerao|'
+          r'sincero|mordomo|educado|normal|comediante|engracado|piadista)\b')
+      .firstMatch(f);
+  if (modo != null) {
+    final id = switch (modo.group(1)) {
+      'agressivo' || 'bravo' => 'agressivo',
+      'sincerao' || 'sincero' => 'sincerao',
+      'comediante' || 'engracado' || 'piadista' => 'comediante',
+      _ => 'mordomo',
+    };
+    return Comando(TipoComando.personalidade, falado, personalidade: id);
   }
 
   if (RegExp(r'\b(que horas|horas sao|hora agora)\b').hasMatch(f)) {
@@ -195,10 +217,31 @@ class AssistenteService extends ChangeNotifier {
     ultimaFala = '';
     ultimaResposta = '';
     notifyListeners();
-    final falado = await Sistema.ouvir(prompt: 'Como posso ajudar?');
-    if (falado.trim().isEmpty) {
-      estado = EstadoAssistente.parado;
+    // Mostra no orbe o que já foi entendido, palavra por palavra.
+    void parcial() {
+      if (estado != EstadoAssistente.ouvindo) return;
+      ultimaFala = Sistema.falaParcial.value;
       notifyListeners();
+    }
+
+    Sistema.falaParcial.addListener(parcial);
+    final String falado;
+    try {
+      falado = await Sistema.ouvir(prompt: 'Como posso ajudar?');
+    } finally {
+      Sistema.falaParcial.removeListener(parcial);
+    }
+    if (falado.trim().isEmpty) {
+      ultimaFala = '';
+      ultimaResposta = 'Não ouvi nada. Toque no microfone e fale de novo.';
+      estado = EstadoAssistente.respondendo;
+      notifyListeners();
+      Timer(const Duration(seconds: 3), () {
+        if (estado == EstadoAssistente.respondendo) {
+          estado = EstadoAssistente.parado;
+          notifyListeners();
+        }
+      });
       return;
     }
     await executarTexto(falado);
@@ -270,13 +313,27 @@ class AssistenteService extends ChangeNotifier {
         final itens = await ResumoService.instance.montar();
         if (itens.isEmpty) return 'Ainda não tenho informações do seu dia.';
         return itens.map((i) => i.texto).join(' ').replaceAll('°', ' graus');
+      case TipoComando.personalidade:
+        await JarvisService.instance.trocarPersonalidade(c.personalidade!);
+        return switch (c.personalidade) {
+          'agressivo' => 'Modo agressivo ligado. Agora aguenta.',
+          'sincerao' => 'Modo sincerão. Vou falar a verdade, goste ou não.',
+          'comediante' => 'Modo comediante ativado. Prepare-se para piadas ruins.',
+          _ => 'De volta ao modo mordomo, às suas ordens.',
+        };
       case TipoComando.abrirTela:
         pedidoDeTela.value = c.tela;
         return 'Abrindo.';
       case TipoComando.desconhecido:
         // O cérebro local não entendeu: pergunta para a IA (Gemini / Groq).
         final ia = await JarvisService.instance.responder(c.textoOriginal);
-        if (ia != null) return ia;
+        if (ia != null) {
+          // A IA entendeu um pedido de AÇÃO (ex.: "time de um minuto"): o app
+          // executa de verdade em vez de só responder "ok, contando".
+          final acao = acaoDaIa(ia, c.textoOriginal);
+          if (acao != null) return _executar(acao);
+          return ia;
+        }
         return 'Ainda não sei responder isso. Tente: timer de 10 minutos, '
             'vai chover hoje, adiciona leite na lista, ou quando é o próximo jogo. '
             'Para perguntas livres, configure a inteligência artificial nas Configurações.';
@@ -372,4 +429,42 @@ class AssistenteService extends ChangeNotifier {
     Sistema.pararAlarme();
     notifyListeners();
   }
+}
+
+/// Lê o comando em JSON que a IA devolve quando o pedido é uma ação
+/// ({"acao":"temporizador","segundos":60}...). null = é só uma resposta
+/// falada. Função pura — testada.
+Comando? acaoDaIa(String resposta, String falado) {
+  final m = RegExp(r'\{[^{}]*"acao"[^{}]*\}').firstMatch(resposta);
+  if (m == null) return null;
+  final Map<String, dynamic> j;
+  try {
+    j = jsonDecode(m.group(0)!) as Map<String, dynamic>;
+  } catch (_) {
+    return null;
+  }
+  switch (j['acao']) {
+    case 'temporizador':
+      final s = (j['segundos'] as num?)?.toInt() ?? 0;
+      if (s <= 0 || s > 24 * 3600) return null;
+      return Comando(TipoComando.temporizador, falado, duracao: Duration(seconds: s));
+    case 'cancelar_temporizador':
+      return Comando(TipoComando.cancelarTemporizador, falado);
+    case 'compras':
+      final itens = (j['itens'] as List? ?? const [])
+          .map((e) => '$e'.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      if (itens.isEmpty) return null;
+      return Comando(TipoComando.adicionarCompra, falado, itens: itens);
+    case 'tela':
+      const validas = {
+        'clima', 'palmeiras', 'proxima_partida', 'classificacao', 'calendario',
+        'compras', 'brasil', 'regiao', 'fotos', 'spotify',
+      };
+      final tela = '${j['tela'] ?? ''}';
+      if (!validas.contains(tela)) return null;
+      return Comando(TipoComando.abrirTela, falado, tela: tela);
+  }
+  return null;
 }

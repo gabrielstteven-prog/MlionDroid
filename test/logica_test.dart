@@ -5,6 +5,14 @@ import 'package:mlion_droid/update_manager.dart';
 import 'package:mlion_droid/util.dart';
 
 void main() {
+  group('Descanso da tela', () {
+    test('acorda no fim do horário: hoje se ainda não passou, senão amanhã', () {
+      expect(proximaHoraCheia(DateTime(2026, 10, 3, 23, 10), 6), DateTime(2026, 10, 4, 6));
+      expect(proximaHoraCheia(DateTime(2026, 10, 4, 0, 5), 6), DateTime(2026, 10, 4, 6));
+      expect(proximaHoraCheia(DateTime(2026, 10, 31, 6, 0), 6), DateTime(2026, 11, 1, 6));
+    });
+  });
+
   group('Rodízio de telas', () {
     const ordem = ['bom_dia', 'clima', 'palmeiras', 'fotos', 'spotify'];
 

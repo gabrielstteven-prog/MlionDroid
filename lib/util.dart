@@ -95,3 +95,10 @@ String saudacaoDaHora([DateTime? quando]) {
   if (h < 18) return 'Boa tarde';
   return 'Boa noite';
 }
+
+/// Próxima vez que o relógio marcar [hora]:00 depois de [agora]
+/// (hoje, se ainda não passou; senão amanhã).
+DateTime proximaHoraCheia(DateTime agora, int hora) {
+  final hoje = DateTime(agora.year, agora.month, agora.day, hora);
+  return hoje.isAfter(agora) ? hoje : DateTime(agora.year, agora.month, agora.day + 1, hora);
+}

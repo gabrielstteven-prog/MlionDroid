@@ -29,6 +29,7 @@ import 'tela_regiao.dart';
 import 'tela_spotify.dart';
 import 'tela_tabela.dart';
 import 'update_manager.dart';
+import 'util.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -164,6 +165,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     SpotifyManager.instance.onFaixaTrocada = _onFaixaSpotifyTrocada;
     AssistenteService.instance.pedidoDeTela.addListener(_pedidoDoAssistente);
     FootballService.instance.ultimoLance.addListener(_lanceDoJogo);
+    Sistema.acordouPorSensor.addListener(_acordouPorSensor);
   }
 
   @override
@@ -175,6 +177,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     SpotifyManager.instance.onFaixaTrocada = null;
     AssistenteService.instance.pedidoDeTela.removeListener(_pedidoDoAssistente);
     FootballService.instance.ultimoLance.removeListener(_lanceDoJogo);
+    Sistema.acordouPorSensor.removeListener(_acordouPorSensor);
     super.dispose();
   }
 
@@ -191,9 +194,53 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     setState(() => _modoNoite = deveFicar);
     // Escurece a tela de verdade (brilho da janela) durante a noite.
     Sistema.brilho(deveFicar ? 0.05 : null);
+    final desligar = config.getBool('noite', 'desligar_tela', false);
+    if (deveFicar && desligar) {
+      // Descanso de verdade: apaga a tela e agenda o despertar no fim do
+      // horário (o alarme do Android garante, mesmo se o app congelar).
+      _telaDesligada = true;
+      Sistema.desligarTela(
+        acordarEm: proximaHoraCheia(agora, config.getInt('noite', 'hora_fim', 6)),
+        luz: config.getBool('noite', 'acordar_com_luz', true),
+        proximidade: config.getBool('noite', 'acordar_com_proximidade', true),
+      );
+    }
     if (!deveFicar) {
       _ultimaTrocaDeTela = DateTime.now();
+      if (_telaDesligada) {
+        _telaDesligada = false;
+        // Fim do descanso: acende a tela sozinho (se foi o horário que
+        // acabou) e volta a manter a tela ligada.
+        if (!dispensada) {
+          Sistema.acordarTela();
+        } else {
+          Sistema.pararDescanso();
+        }
+        Sistema.manterTelaLigada(config.getBool('geral', 'manter_tela_ligada', true));
+      }
     }
+  }
+
+  /// A tela foi apagada pelo Modo Noite (opção "desligar a tela").
+  bool _telaDesligada = false;
+
+  /// Luz acesa ou alguém perto: o painel fica aceso por alguns minutos e,
+  /// sem ninguém mexendo, apaga de novo (o sensor volta a vigiar).
+  void _acordouPorSensor() {
+    if (Sistema.acordouPorSensor.value == null) return;
+    _noiteDispensadaAte = DateTime.now().add(_tempoAcordadoPorSensor);
+    _avaliarModoNoite();
+  }
+
+  Duration get _tempoAcordadoPorSensor =>
+      Duration(minutes: config.getInt('noite', 'minutos_acordado', 2).clamp(1, 30));
+
+  /// Toque com o painel aceso de madrugada: adia o próximo apagão.
+  void _adiarApagao() {
+    final ate = _noiteDispensadaAte;
+    if (ate == null || DateTime.now().isAfter(ate)) return;
+    final novo = DateTime.now().add(_tempoAcordadoPorSensor);
+    if (novo.isAfter(ate)) _noiteDispensadaAte = novo;
   }
 
   void _acordarDaNoite() {
@@ -373,6 +420,10 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
       setState(() => _modoNoite = false);
       Sistema.brilho(null);
     }
+    if (_telaDesligada) {
+      _telaDesligada = false;
+      Sistema.manterTelaLigada(config.getBool('geral', 'manter_tela_ligada', true));
+    }
   }
 
   Widget _buildTela() {
@@ -445,7 +496,10 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
             onHorizontalDragEnd: _onSwipe,
             child: Listener(
               behavior: HitTestBehavior.translucent,
-              onPointerDown: (_) => _entrarModoManual(),
+              onPointerDown: (_) {
+                _adiarApagao();
+                _entrarModoManual();
+              },
               child: _aplicarTransicao(_buildTela()),
             ),
           ),

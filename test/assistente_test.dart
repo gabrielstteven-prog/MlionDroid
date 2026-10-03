@@ -6,6 +6,42 @@ import 'package:mlion_droid/services/musica_service.dart';
 import 'package:mlion_droid/times.dart';
 
 void main() {
+  group('Teste real no tablet (03/10)', () {
+    test('troca de personalidade por voz', () {
+      expect(interpretar('modo agressivo').personalidade, 'agressivo');
+      expect(interpretar('Jarvis, fica sincerão').personalidade, 'sincerao');
+      expect(interpretar('volta pro modo normal').personalidade, 'mordomo');
+      expect(interpretar('modo comediante').tipo, TipoComando.personalidade);
+    });
+    test('"time de um minuto" (erro do reconhecimento) é temporizador', () {
+      final c = interpretar('time de um minuto');
+      expect(c.tipo, TipoComando.temporizador);
+      expect(c.duracao, const Duration(minutes: 1));
+    });
+    test('cronometra / me lembra daqui a', () {
+      expect(interpretar('cronometra 5 minutos').duracao, const Duration(minutes: 5));
+      expect(interpretar('me lembra daqui a 10 minutos').duracao, const Duration(minutes: 10));
+    });
+    test('"mostra o time" continua abrindo a tela do time', () {
+      final c = interpretar('mostra o time');
+      expect(c.tipo, TipoComando.abrirTela);
+      expect(c.tela, 'palmeiras');
+    });
+    test('pergunta livre continua indo para a IA', () {
+      expect(interpretar('me conta uma curiosidade do Palmeiras').tipo, TipoComando.desconhecido);
+    });
+    test('IA devolve ação em JSON: o app executa', () {
+      final c = acaoDaIa('{"acao":"temporizador","segundos":90}', 'x')!;
+      expect(c.tipo, TipoComando.temporizador);
+      expect(c.duracao, const Duration(seconds: 90));
+      expect(acaoDaIa('Claro! {"acao":"compras","itens":["leite","pão"]}', 'x')!.itens,
+          ['leite', 'pão']);
+      expect(acaoDaIa('{"acao":"tela","tela":"clima"}', 'x')!.tela, 'clima');
+      expect(acaoDaIa('O Palmeiras foi fundado em 1914.', 'x'), isNull);
+      expect(acaoDaIa('{"acao":"tela","tela":"hackear"}', 'x'), isNull);
+    });
+  });
+
   group('Assistente — interpretar comandos falados', () {
     test('temporizador em vários jeitos de falar', () {
       expect(interpretar('timer de 10 minutos').duracao, const Duration(minutes: 10));

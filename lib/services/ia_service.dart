@@ -64,7 +64,24 @@ class IaService {
     return null;
   }
 
+  /// Pede "raciocínio leve" (respostas curtas de assistente não precisam
+  /// pensar muito, e pensar demora). Se o modelo não aceitar o campo, tenta
+  /// de novo sem ele.
+  bool _aceitaNivelDeRaciocinio = true;
+
   Future<String?> _gemini(String sistema, String pergunta) async {
+    if (_aceitaNivelDeRaciocinio) {
+      try {
+        return await _chamarGemini(sistema, pergunta, raciocinioLeve: true);
+      } on _Recusado {
+        _aceitaNivelDeRaciocinio = false;
+      }
+    }
+    return _chamarGemini(sistema, pergunta, raciocinioLeve: false);
+  }
+
+  Future<String?> _chamarGemini(String sistema, String pergunta,
+      {required bool raciocinioLeve}) async {
     final res = await http
         .post(
           Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/'
@@ -84,10 +101,17 @@ class IaService {
                 ]
               }
             ],
-            'generationConfig': {'temperature': 0.7, 'maxOutputTokens': 1500},
+            'generationConfig': {
+              'temperature': 0.7,
+              'maxOutputTokens': 1500,
+              if (raciocinioLeve) 'thinkingConfig': {'thinkingLevel': 'low'},
+            },
           }),
         )
         .timeout(const Duration(seconds: 25));
+    if (raciocinioLeve && res.statusCode == 400 && res.body.contains('thinking')) {
+      throw _Recusado();
+    }
     if (res.statusCode != 200) {
       throw Exception('HTTP ${res.statusCode}: ${_resumoErro(res.body)}');
     }
@@ -151,3 +175,5 @@ class IaService {
       .replaceAll(RegExp(r'\n{2,}'), '\n')
       .trim();
 }
+
+class _Recusado implements Exception {}

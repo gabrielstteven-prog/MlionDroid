@@ -43,6 +43,12 @@ void main() {
     });
   });
 
+  test('ElevenLabs: erro de voz da biblioteca vira explicação', () {
+    expect(VozService.explicarErro('Exception: ElevenLabs 402: {"detail":{"status":"paid_plan_required"}}'),
+        contains('biblioteca'));
+    expect(VozService.explicarErro('ElevenLabs 401'), contains('chave'));
+  });
+
   test('ElevenLabs: lista de vozes', () {
     final v = VozService.parseVozes({
       'voices': [
