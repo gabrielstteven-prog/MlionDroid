@@ -48,27 +48,8 @@ class Sistema {
 
   // ── Descanso da tela (Modo Noite) ─────────────────────────────────────
 
-  /// O app tem a permissão de apagar a tela (administrador do dispositivo)?
-  static Future<bool> adminAtivo() async {
-    try {
-      return await _canal.invokeMethod<bool>('adminAtivo') ?? false;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /// Abre a tela do Android que pede a permissão de apagar a tela.
-  static Future<void> pedirAdmin() async {
-    try {
-      await _canal.invokeMethod('pedirAdmin');
-    } catch (e) {
-      debugPrint('Sistema.pedirAdmin: $e');
-    }
-  }
-
-  /// Apaga a tela agora e agenda o despertar para [acordarEm]. Devolve
-  /// false se não há permissão (aí a tela só apaga pelo tempo de espera do
-  /// sistema).
+  /// Descanso: desliga a luz de fundo da tela (sem bloquear o tablet) e
+  /// agenda o despertar para [acordarEm].
   /// Com [luz]/[proximidade], um serviço vigia esses sensores e acende a
   /// tela quando a luz do cômodo acende ou alguém chega perto.
   static Future<bool> desligarTela(

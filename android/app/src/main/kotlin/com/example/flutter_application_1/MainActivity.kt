@@ -3,8 +3,6 @@ package com.example.flutter_application_1
 import android.app.Activity
 import android.app.AlarmManager
 import android.app.PendingIntent
-import android.app.admin.DevicePolicyManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
@@ -20,6 +18,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.view.MotionEvent
 import android.view.WindowManager
 import java.util.Locale
 import io.flutter.embedding.android.FlutterActivity
@@ -41,6 +40,20 @@ class MainActivity : FlutterActivity() {
         // desligar isso pelas Configurações (canal "sistema").
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (intent?.getBooleanExtra(EXTRA_ACORDAR, false) == true) acordarTela()
+    }
+
+    // Tela em descanso (luz de fundo desligada): qualquer toque acende, e o
+    // toque não "vaza" para o botão que estiver embaixo do dedo.
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (window.attributes.screenBrightness == WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF) {
+            if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+                DescansoService.parar(this)
+                acordarTela()
+                canalSistema?.invokeMethod("acordouPorSensor", "toque")
+            }
+            return true
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
     // O alarme do fim do Modo Noite reabre o app com este extra.
@@ -97,6 +110,9 @@ class MainActivity : FlutterActivity() {
                     val attrs = window.attributes
                     attrs.screenBrightness = if (valor < 0) {
                         WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                    } else if (valor == 0.0) {
+                        // 0 = luz de fundo DESLIGADA (descanso da tela), sem bloquear.
+                        WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF
                     } else {
                         valor.toFloat().coerceIn(0.01f, 1f)
                     }
@@ -118,19 +134,6 @@ class MainActivity : FlutterActivity() {
                     // quando a fala acabou para apagar o orbe.
                     val caminho = call.argument<String>("caminho") ?: ""
                     tocarAudio(caminho, result)
-                }
-                "adminAtivo" -> result.success(adminAtivo())
-                "pedirAdmin" -> {
-                    val i = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                        putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, componenteAdmin())
-                        putExtra(
-                            DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                            "Permite ao MlionDroid apagar a tela no horário de descanso. " +
-                                "Ele só usa a permissão de bloquear a tela."
-                        )
-                    }
-                    startActivity(i)
-                    result.success(null)
                 }
                 "desligarTela" -> {
                     val acordarEm = call.argument<Number>("acordarEm")?.toLong() ?: 0L
@@ -330,24 +333,16 @@ class MainActivity : FlutterActivity() {
     }
 
     // ── Descanso da tela (Modo Noite) ─────────────────────────────────────
-    private fun componenteAdmin() = ComponentName(this, AdminTela::class.java)
-
-    private fun adminAtivo(): Boolean {
-        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        return dpm.isAdminActive(componenteAdmin())
-    }
-
     /** true = apagou na hora (admin ativo); false = só liberou o tempo de espera. */
+    // Descanso SEM bloquear o tablet: o app continua na frente, a tela fica
+    // preta e a luz de fundo é desligada. Antes usava o bloqueio do Android
+    // (lockNow), que deixava o tablet na tela de senha.
     private fun desligarTela(): Boolean {
-        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        // Já deixa o painel pronto para aparecer por cima da tela de bloqueio
-        // quando um sensor acender a tela.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) setShowWhenLocked(true)
-        if (adminAtivo()) {
-            (getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager).lockNow()
-            return true
-        }
-        return false
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val attrs = window.attributes
+        attrs.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF
+        window.attributes = attrs
+        return true
     }
 
     // Alarme do Android como garantia: se o sistema congelar o app durante a
@@ -365,6 +360,11 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun acordarTela() {
+        val a = window.attributes
+        if (a.screenBrightness == WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF) {
+            a.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            window.attributes = a
+        }
         // Mostra o painel por cima da tela de bloqueio (sem pedir a senha para
         // VER o painel; abrir outros apps continua pedindo).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -385,6 +385,12 @@ class MainActivity : FlutterActivity() {
         )
         wl.acquire(10_000)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // "Acender ao aparecer" só vale para este despertar.
+        window.decorView.postDelayed({
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) setTurnScreenOn(false)
+            else @Suppress("DEPRECATION")
+            window.clearFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+        }, 3000)
     }
 
     // ── Alarme do temporizador ─────────────────────────────────────────────

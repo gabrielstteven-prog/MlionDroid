@@ -48,19 +48,6 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Acender a tela do painel de parede quando a luz do cômodo acende ou alguém se aproxima, durante o horário de descanso da tela." />
         </service>
-        <!-- Permite apagar a tela no horário de descanso (só "force-lock"). -->
-        <receiver
-            android:name=".AdminTela"
-            android:exported="true"
-            android:label="MlionDroid: apagar a tela à noite"
-            android:permission="android.permission.BIND_DEVICE_ADMIN">
-            <meta-data
-                android:name="android.app.device_admin"
-                android:resource="@xml/admin_tela" />
-            <intent-filter>
-                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
-            </intent-filter>
-        </receiver>
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

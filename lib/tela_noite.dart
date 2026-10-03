@@ -13,10 +13,20 @@ import 'util.dart';
 /// Tocar na tela acorda o painel por 10 minutos.
 class TelaNoite extends StatelessWidget {
   final VoidCallback aoTocar;
-  const TelaNoite({super.key, required this.aoTocar});
+
+  /// Descanso da tela: tudo preto (a luz de fundo também é desligada).
+  final bool apagada;
+  const TelaNoite({super.key, required this.aoTocar, this.apagada = false});
 
   @override
   Widget build(BuildContext context) {
+    if (apagada) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: aoTocar,
+        child: const ColoredBox(color: Colors.black, child: SizedBox.expand()),
+      );
+    }
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: aoTocar,

@@ -191,14 +191,16 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
         _noiteDispensadaAte != null && agora.isBefore(_noiteDispensadaAte!);
     final deveFicar = ativo && naJanela && !dispensada && !_showConfig;
     if (deveFicar == _modoNoite) return;
-    setState(() => _modoNoite = deveFicar);
-    // Escurece a tela de verdade (brilho da janela) durante a noite.
-    Sistema.brilho(deveFicar ? 0.05 : null);
     final desligar = config.getBool('noite', 'desligar_tela', false);
+    setState(() {
+      _modoNoite = deveFicar;
+      if (deveFicar && desligar) _telaDesligada = true;
+    });
+    // Escurece a tela (brilho da janela) durante a noite; no descanso, a luz
+    // de fundo é desligada de vez (0), sem bloquear o tablet.
+    Sistema.brilho(deveFicar ? (desligar ? 0.0 : 0.05) : null);
     if (deveFicar && desligar) {
-      // Descanso de verdade: apaga a tela e agenda o despertar no fim do
-      // horário (o alarme do Android garante, mesmo se o app congelar).
-      _telaDesligada = true;
+      // Descanso: luz de fundo desligada + câmera vigiando luz e movimento.
       Sistema.desligarTela(
         acordarEm: proximaHoraCheia(agora, config.getInt('noite', 'hora_fim', 6)),
         luz: config.getBool('noite', 'acordar_com_luz', true),
@@ -228,8 +230,13 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
   /// Luz acesa ou alguém perto: o painel fica aceso por alguns minutos e,
   /// sem ninguém mexendo, apaga de novo (o sensor volta a vigiar).
   void _acordouPorSensor() {
-    if (Sistema.acordouPorSensor.value == null) return;
-    _noiteDispensadaAte = DateTime.now().add(_tempoAcordadoPorSensor);
+    final motivo = Sistema.acordouPorSensor.value;
+    if (motivo == null) return;
+    // Toque = a pessoa quer usar o painel: 10 min. Luz/movimento: o tempo
+    // configurado (padrão 2 min).
+    _noiteDispensadaAte = DateTime.now().add(motivo.startsWith('toque')
+        ? const Duration(minutes: 10)
+        : _tempoAcordadoPorSensor);
     _avaliarModoNoite();
   }
 
@@ -476,7 +483,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
   Widget build(BuildContext context) {
     final Widget conteudo;
     if (_modoNoite) {
-      conteudo = TelaNoite(aoTocar: _acordarDaNoite);
+      conteudo = TelaNoite(aoTocar: _acordarDaNoite, apagada: _telaDesligada);
     } else if (_showConfig) {
       conteudo = TelaConfig(aoSalvar: _fecharConfig);
     } else {

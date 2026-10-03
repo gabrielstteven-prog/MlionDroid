@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Única política pedida: apagar (bloquear) a tela no horário de descanso. -->
-<device-admin>
-    <uses-policies>
-        <force-lock />
-    </uses-policies>
-</device-admin>

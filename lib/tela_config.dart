@@ -1413,19 +1413,8 @@ class _TelaConfigState extends State<TelaConfig>
     );
   }
 
-  /// Muda para refazer a checagem da permissão de apagar a tela.
+  /// Muda para refazer a checagem da permissão da câmera.
   int _checagemAdmin = 0;
-
-  Future<void> _pedirPermissaoTela() async {
-    await Sistema.pedirAdmin();
-    // A resposta vem numa tela do Android: confere de novo por ~30 s.
-    for (var i = 0; i < 15; i++) {
-      await Future.delayed(const Duration(seconds: 2));
-      if (!mounted) return;
-      setState(() => _checagemAdmin++);
-      if (await Sistema.adminAtivo()) return;
-    }
-  }
 
   Widget _buildNoiteConfig() {
     final inicio = config.getInt('noite', 'hora_inicio', 23);
@@ -1477,11 +1466,10 @@ class _TelaConfigState extends State<TelaConfig>
         _sectionTitle('😴 Descanso da tela'),
         const SizedBox(height: 8),
         Text(
-          'Em vez do relógio escuro, a tela apaga de verdade no horário acima e '
-          'acende sozinha no fim, já no painel. Durante a noite, para ver o '
-          'painel, aperte o botão de ligar do tablet: o painel aparece sem pedir a '
-          'senha (para abrir outros apps a senha continua sendo pedida). Tocar na '
-          'tela apagada não acende: com a tela desligada o toque não funciona.',
+          'Em vez do relógio escuro, a tela fica totalmente apagada (luz de fundo '
+          'desligada) no horário acima, sem bloquear o tablet e sem pedir senha. '
+          'Ela acende sozinha no fim do horário, com um toque na tela, quando a luz '
+          'do cômodo acende ou quando a câmera nota alguém passando.',
           style: GoogleFonts.figtree(color: Colors.white54, fontSize: 13, height: 1.5),
         ),
         const SizedBox(height: 16),
@@ -1564,35 +1552,6 @@ class _TelaConfigState extends State<TelaConfig>
             'A tela apaga. Apague a luz do cômodo e acenda de novo, ou passe na frente do '
             'tablet com alguma luz acesa. Se nada acontecer, ela acende sozinha em 5 minutos.',
             style: GoogleFonts.figtree(color: Colors.white38, fontSize: 12.5, height: 1.4),
-          ),
-          const Divider(color: Colors.white10, height: 28),
-          FutureBuilder<bool>(
-            key: ValueKey(_checagemAdmin),
-            future: Sistema.adminAtivo(),
-            builder: (context, snap) {
-              final ativo = snap.data == true;
-              return Row(children: [
-                Icon(ativo ? Icons.verified_rounded : Icons.lock_clock_rounded,
-                    color: ativo ? Colors.greenAccent : Colors.orangeAccent, size: 22),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    ativo
-                        ? 'Permissão para apagar a tela: ativada.'
-                        : 'Falta a permissão para apagar a tela na hora. Sem ela, a tela '
-                            'só apaga pelo tempo de espera do Android.',
-                    style: GoogleFonts.figtree(color: Colors.white70, fontSize: 14, height: 1.4),
-                  ),
-                ),
-                if (!ativo) ...[
-                  const SizedBox(width: 12),
-                  FilledButton(
-                    onPressed: _pedirPermissaoTela,
-                    child: const Text('Permitir'),
-                  ),
-                ],
-              ]);
-            },
           ),
         ]),
       ],
