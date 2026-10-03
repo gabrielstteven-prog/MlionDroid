@@ -94,7 +94,8 @@ class MapaClimaManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> mostrar(String lat, String lon, ModoMapa modo, {bool forcar = false}) {
+  Future<void> mostrar(String lat, String lon, ModoMapa modo,
+      {bool forcar = false}) {
     final url = modo.url(lat, lon);
     if (!forcar && _carregado == url && !_comErro) {
       return _carregando?.future ?? Future.value();
@@ -177,7 +178,9 @@ class _TelaClimaState extends State<TelaClima> {
       _modo = modo;
       _mapaPronto = false;
     });
-    MapaClimaManager.instance.mostrar(_lat, _lon, modo, forcar: forcar).then((_) {
+    MapaClimaManager.instance
+        .mostrar(_lat, _lon, modo, forcar: forcar)
+        .then((_) {
       if (mounted) setState(() => _mapaPronto = true);
     });
   }
@@ -190,12 +193,14 @@ class _TelaClimaState extends State<TelaClima> {
       icone: Icons.cloud_rounded,
       marca: dados == null
           ? null
-          : IconeClima(codigo: dados.codigo, ehDia: dados.ehDia, tamanho: r.icon(60)),
+          : IconeClima(
+              codigo: dados.codigo, ehDia: dados.ehDia, tamanho: r.icon(60)),
       titulo: 'Clima em ${_cfg.getString('clima', 'cidade', 'Hortolândia')}',
       subtitulo: dados == null ? null : descricaoClima(dados.codigo),
       destaque: Destaques.clima,
-      rodapeDireita:
-          dados == null ? null : 'Atualizado ${descreverIdade(dados.atualizadoEm)}',
+      rodapeDireita: dados == null
+          ? null
+          : 'Atualizado ${descreverIdade(dados.atualizadoEm)}',
       child: dados == null
           ? (_carregando
               ? const Carregando(cor: Destaques.clima)
@@ -256,11 +261,15 @@ class _TelaClimaState extends State<TelaClima> {
           avisos: _avisos.isNotEmpty
               ? _avisos
               : const [
-                  Aviso('Sem alertas para hoje', 'Tempo firme pelo resto do dia',
-                      NivelAviso.tranquilo, Icons.wb_sunny_rounded, 'Previsão'),
+                  Aviso(
+                      'Sem alertas para hoje',
+                      'Tempo firme pelo resto do dia',
+                      NivelAviso.tranquilo,
+                      Icons.wb_sunny_rounded,
+                      'Previsão'),
                 ],
         ),
-        SizedBox(height: r.sp(22)),
+        SizedBox(height: r.sp(16)),
         if (horas.isNotEmpty) ...[
           Text('Próximas horas', style: t.legenda()),
           SizedBox(height: r.sp(8)),
@@ -272,8 +281,10 @@ class _TelaClimaState extends State<TelaClima> {
                     children: [
                       Text('${h.hora.hour}h', style: t.apoio(cor: Cores.texto)),
                       IconeClima(
-                          codigo: h.codigo, ehDia: h.hora.hour >= 6 && h.hora.hour < 18,
-                          tamanho: r.icon(56), animar: false),
+                          codigo: h.codigo,
+                          ehDia: h.hora.hour >= 6 && h.hora.hour < 18,
+                          tamanho: r.icon(48),
+                          animar: false),
                       Text('${h.temp}°', style: t.corpo(peso: FontWeight.w700)),
                       Text(h.chuva >= 20 ? '${h.chuva}%' : ' ',
                           style: t.legenda(cor: Cores.chuva)),
@@ -282,7 +293,7 @@ class _TelaClimaState extends State<TelaClima> {
                 ),
             ],
           ),
-          SizedBox(height: r.sp(18)),
+          SizedBox(height: r.sp(12)),
         ],
         Text('Próximos dias', style: t.legenda()),
         SizedBox(height: r.sp(8)),
@@ -292,14 +303,27 @@ class _TelaClimaState extends State<TelaClima> {
             children: [
               for (final dia in d.proximosDias.take(4))
                 Expanded(
-                  child: Column(
-                    children: [
-                      Text(diaSemanaCurto(dia.dia), style: t.corpo(peso: FontWeight.w700)),
-                      IconeClima(codigo: dia.codigo, tamanho: r.icon(72), animar: false),
-                      Text('${dia.max}° / ${dia.min}°', style: t.subtitulo().copyWith(fontWeight: FontWeight.w500)),
-                      if (dia.chanceChuva >= 20)
-                        Text('${dia.chanceChuva}% chuva', style: t.legenda(cor: Cores.chuva)),
-                    ],
+                  // scaleDown: em telas mais baixas o dia encolhe em vez de cortar.
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.topCenter,
+                    child: Column(
+                      children: [
+                        Text(diaSemanaCurto(dia.dia),
+                            style: t.corpo(peso: FontWeight.w700)),
+                        IconeClima(
+                            codigo: dia.codigo,
+                            tamanho: r.icon(60),
+                            animar: false),
+                        Text('${dia.max}° / ${dia.min}°',
+                            style: t
+                                .subtitulo()
+                                .copyWith(fontWeight: FontWeight.w500)),
+                        if (dia.chanceChuva >= 20)
+                          Text('${dia.chanceChuva}% chuva',
+                              style: t.legenda(cor: Cores.chuva)),
+                      ],
+                    ),
                   ),
                 ),
             ],
@@ -317,7 +341,9 @@ class _TelaClimaState extends State<TelaClima> {
         borderRadius: BorderRadius.circular(r.sp(28)),
         child: ColoredBox(
             color: const Color(0xFF2B5C8A),
-            child: Center(child: Text('[ mapa: ${_modo?.rotulo} ]', style: t.subtitulo()))),
+            child: Center(
+                child:
+                    Text('[ mapa: ${_modo?.rotulo} ]', style: t.subtitulo()))),
       );
     }
     final erro = MapaClimaManager.instance.comErro;
@@ -332,7 +358,8 @@ class _TelaClimaState extends State<TelaClima> {
               color: const Color(0xFF10284A),
               child: erro
                   ? GestureDetector(
-                      onTap: () => _trocarModo(_modo ?? ModoMapa.radar, forcar: true),
+                      onTap: () =>
+                          _trocarModo(_modo ?? ModoMapa.radar, forcar: true),
                       child: const AvisoTela(
                         icone: Icons.map_outlined,
                         titulo: 'Mapa indisponível',
@@ -352,7 +379,8 @@ class _TelaClimaState extends State<TelaClima> {
                     child: GestureDetector(
                       onTap: () => _trocarModo(m),
                       child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: r.sp(14), vertical: r.sp(9)),
+                        padding: EdgeInsets.symmetric(
+                            horizontal: r.sp(14), vertical: r.sp(9)),
                         decoration: BoxDecoration(
                           color: m == _modo
                               ? Cores.texto

@@ -296,14 +296,14 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     _transitioning = true;
     _transCtrl.duration = _duracaoTransicao;
     _transCtrl.reverse().then((_) {
-      if (!mounted) return;
+        if (!mounted) return;
       setState(() {
         aplicar();
         _renderKeyCounter++;
         _ultimaTrocaDeTela = DateTime.now();
       });
       Future.delayed(Duration(milliseconds: _pausaMs), () {
-        if (!mounted) return;
+            if (!mounted) return;
         _transCtrl.forward().whenComplete(() => _transitioning = false);
       });
     });
@@ -320,12 +320,27 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     });
   }
 
+  /// Deslocamento horizontal acumulado do deslize atual.
+  double _arrasto = 0;
+
+  /// Troca de tela pelo deslize. Vale pela distância (mais de 120 px) OU
+  /// pela velocidade: só a velocidade falhava quando o dedo parava um
+  /// instante antes de soltar (velocidade final medida = zero).
   void _onSwipe(DragEndDetails details) {
-    if (_showConfig) return;
+    final dx = _arrasto;
+    _arrasto = 0;
+    if (_showConfig || _transitioning) return;
     final vel = details.primaryVelocity ?? 0;
-    if (vel.abs() < 250 || _transitioning) return;
+    final int passo;
+    if (dx.abs() >= 120) {
+      passo = dx < 0 ? 1 : -1;
+    } else if (vel.abs() >= 250) {
+      passo = vel < 0 ? 1 : -1;
+    } else {
+      return;
+    }
     _entrarModoManual();
-    _avancar(vel < 0 ? 1 : -1);
+    _avancar(passo);
   }
 
   Future<void> _fecharConfig() async {
@@ -422,6 +437,10 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
         child: Scaffold(
           backgroundColor: Colors.transparent, // o céu do app aparece atrás
           body: GestureDetector(
+            // opaque: o deslize vale na tela toda, inclusive nas áreas vazias.
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragStart: (_) => _arrasto = 0,
+            onHorizontalDragUpdate: (d) => _arrasto += d.delta.dx,
             onHorizontalDragEnd: _onSwipe,
             child: Listener(
               behavior: HitTestBehavior.translucent,

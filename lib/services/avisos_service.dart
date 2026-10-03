@@ -190,7 +190,8 @@ class AvisosService {
             : NivelAviso.atencao;
     final descricao = '${m['descricao'] ?? 'Aviso meteorológico'}';
     final fim = DateTime.tryParse('${m['fim']}'.replaceFirst(' ', 'T'));
-    final riscos = '${m['riscos'] ?? ''}';
+    // O INMET às vezes manda os riscos como lista ("[Chuva entre ...]").
+    final riscos = '${m['riscos'] ?? ''}'.replaceAll(RegExp(r'[\[\]"]'), '');
     final resumo = riscos.split('.').first.trim();
     final ate = fim != null ? 'Até ${diaSemanaCurto(fim).toLowerCase()} ${horaMinuto(fim)}. ' : '';
     final d = normalizar(descricao);

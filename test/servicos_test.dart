@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mlion_droid/services/avisos_service.dart';
 import 'package:mlion_droid/services/football_service.dart';
 import 'package:mlion_droid/services/news_service.dart';
 import 'package:mlion_droid/services/tv_service.dart';
@@ -174,6 +175,21 @@ void main() {
     test('emoji respeita dia/noite', () {
       expect(emojiClima(0, ehDia: true), '☀️');
       expect(emojiClima(0, ehDia: false), '🌙');
+    });
+    });
+
+  group('INMET', () {
+    test('aviso oficial sem colchetes e com nível certo', () {
+      final a = AvisosService.avisoInmet({
+        'descricao': 'Tempestade',
+        'severidade': 'Perigo',
+        'riscos': '[Chuva entre 30 e 60 mm/h, ventos intensos. Queda de árvores.]',
+        'fim': '2026-10-06 23:59:00',
+      });
+      expect(a.titulo, 'Defesa Civil: Tempestade');
+      expect(a.nivel, NivelAviso.perigo);
+      expect(a.detalhe, isNot(contains('[')));
+      expect(a.detalhe, endsWith('Chuva entre 30 e 60 mm/h, ventos intensos'));
     });
   });
 }
