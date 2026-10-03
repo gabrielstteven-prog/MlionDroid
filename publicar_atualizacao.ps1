@@ -130,10 +130,6 @@ Escrever "[OK] APK gerado com sucesso." "Green"
 $changelog = ""
 $temGit = Test-Path ".git"
 
-# --- 6. Gera o changelog automaticamente a partir dos commits do Git -----------
-$changelog = ""
-$temGit = Test-Path ".git"
-
 if ($temGit) {
     $ultimaTagLocal = (git describe --tags --abbrev=0 2>$null)
     if ($ultimaTagLocal) { $ultimaTagLocal = $ultimaTagLocal.Trim() }
@@ -169,6 +165,14 @@ if ($temGit) {
 } else {
     Escrever "`n[AVISO] Esta pasta ainda nao e um repositorio Git." "Yellow"
     Escrever "         Rode 'git init' para habilitar changelog automatico nas proximas vezes." "Yellow"
+}
+
+# Commits com a mensagem padrao "descricao curta do que mudou" nao dizem
+# nada aos amigos que recebem a atualizacao: nesse caso, pede o texto na mao.
+if ($changelog -match "descri..o curta do que mudou") {
+    Escrever "`n[AVISO] As mensagens de commit estao genericas ('descricao curta do que mudou')." "Yellow"
+    Escrever "        Escreva abaixo as novidades reais desta versao." "Yellow"
+    $changelog = ""
 }
 
 # Sem Git configurado (ou sem commits novos): pede na mao, como antes.
