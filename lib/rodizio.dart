@@ -42,3 +42,13 @@ bool horaNaJanela(int hora, int inicio, int fim) {
   if (inicio < fim) return hora >= inicio && hora < fim;
   return hora >= inicio || hora < fim;
 }
+
+/// Modo Ausente pela agenda: [dias] são os dias da semana (1 = segunda …
+/// 7 = domingo) e a janela vai de [inicio] até [fim] horas. Janela que
+/// vira a noite (ex.: 22h–6h) conta pelo dia em que começou.
+bool emAusenciaAgendada(DateTime agora, List<int> dias, int inicio, int fim) {
+  if (dias.isEmpty || !horaNaJanela(agora.hour, inicio, fim)) return false;
+  final cruzaMeiaNoite = inicio > fim && agora.hour < fim;
+  final diaDaJanela = cruzaMeiaNoite ? agora.subtract(const Duration(days: 1)) : agora;
+  return dias.contains(diaDaJanela.weekday);
+}

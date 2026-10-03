@@ -1527,7 +1527,7 @@ class _TelaConfigState extends State<TelaConfig>
           const SizedBox(height: 12),
           Row(children: [
             Expanded(
-              child: Text('Depois de acender, apaga de novo em',
+              child: Text('Sem ninguém na frente, apaga de novo em',
                   style: GoogleFonts.figtree(color: Colors.white70, fontSize: 15)),
             ),
             _horaPicker(
@@ -1553,6 +1553,63 @@ class _TelaConfigState extends State<TelaConfig>
             'tablet com alguma luz acesa. Se nada acontecer, ela acende sozinha em 5 minutos.',
             style: GoogleFonts.figtree(color: Colors.white38, fontSize: 12.5, height: 1.4),
           ),
+        ]),
+        const SizedBox(height: 24),
+        _sectionTitle('🚪 Modo Ausente'),
+        const SizedBox(height: 8),
+        Text(
+          'Diga "Jarvis, estou saindo" e a tela descansa até você chegar: ela acende '
+          'quando a câmera notar alguém (ou com um toque) e o Jarvis dá as boas-vindas. '
+          'Também dá para agendar, por exemplo de segunda a sexta no horário do trabalho.',
+          style: GoogleFonts.figtree(color: Colors.white54, fontSize: 13, height: 1.5),
+        ),
+        const SizedBox(height: 16),
+        _glassCard(children: [
+          _toggleConfig(
+            titulo: 'Agendar ausência',
+            subtitulo: 'Nos dias e horas abaixo a tela descansa sozinha',
+            categoria: 'ausente',
+            chave: 'agenda_ativa',
+            valorPadrao: false,
+          ),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final (n, rotulo) in const [
+              (1, 'Seg'), (2, 'Ter'), (3, 'Qua'), (4, 'Qui'),
+              (5, 'Sex'), (6, 'Sáb'), (7, 'Dom'),
+            ])
+              FilterChip(
+                label: Text(rotulo),
+                selected: config.getStringList('ausente', 'dias').contains('$n'),
+                onSelected: (sel) => setState(() {
+                  final dias = config.getStringList('ausente', 'dias').toSet();
+                  sel ? dias.add('$n') : dias.remove('$n');
+                  config.set('ausente', 'dias', dias.toList()..sort());
+                }),
+              ),
+          ]),
+          const SizedBox(height: 16),
+          Row(children: [
+            Expanded(
+                child: Text('Das',
+                    style: GoogleFonts.figtree(color: Colors.white70, fontSize: 15))),
+            _horaPicker(
+                valor: config.getInt('ausente', 'hora_inicio', 8),
+                min: 0,
+                max: 23,
+                onChanged: (v) => setState(() => config.set('ausente', 'hora_inicio', v))),
+          ]),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+                child: Text('Até',
+                    style: GoogleFonts.figtree(color: Colors.white70, fontSize: 15))),
+            _horaPicker(
+                valor: config.getInt('ausente', 'hora_fim', 18),
+                min: 0,
+                max: 23,
+                onChanged: (v) => setState(() => config.set('ausente', 'hora_fim', v))),
+          ]),
         ]),
       ],
     );

@@ -166,6 +166,9 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     AssistenteService.instance.pedidoDeTela.addListener(_pedidoDoAssistente);
     FootballService.instance.ultimoLance.addListener(_lanceDoJogo);
     Sistema.acordouPorSensor.addListener(_acordouPorSensor);
+    Sistema.presenca.addListener(_presenca);
+    AssistenteService.instance.ausente.addListener(_modoAusente);
+    Sistema.iniciarEventos();
   }
 
   @override
@@ -178,31 +181,49 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     AssistenteService.instance.pedidoDeTela.removeListener(_pedidoDoAssistente);
     FootballService.instance.ultimoLance.removeListener(_lanceDoJogo);
     Sistema.acordouPorSensor.removeListener(_acordouPorSensor);
+    Sistema.presenca.removeListener(_presenca);
+    AssistenteService.instance.ausente.removeListener(_modoAusente);
     super.dispose();
   }
 
   // ── Modo Noite ───────────────────────────────────────────────────────────
   void _avaliarModoNoite() {
-    final ativo = config.getBool('noite', 'ativo', true);
     final agora = DateTime.now();
-    final naJanela = horaNaJanela(agora.hour,
-        config.getInt('noite', 'hora_inicio', 23), config.getInt('noite', 'hora_fim', 6));
+    final noite = config.getBool('noite', 'ativo', true) &&
+        horaNaJanela(agora.hour, config.getInt('noite', 'hora_inicio', 23),
+            config.getInt('noite', 'hora_fim', 6));
+    final ausenteAgenda = config.getBool('ausente', 'agenda_ativa', false) &&
+        emAusenciaAgendada(
+          agora,
+          config.getStringList('ausente', 'dias').map(int.tryParse).whereType<int>().toList(),
+          config.getInt('ausente', 'hora_inicio', 8),
+          config.getInt('ausente', 'hora_fim', 18),
+        );
     final dispensada =
         _noiteDispensadaAte != null && agora.isBefore(_noiteDispensadaAte!);
-    final deveFicar = ativo && naJanela && !dispensada && !_showConfig;
-    if (deveFicar == _modoNoite) return;
-    final desligar = config.getBool('noite', 'desligar_tela', false);
+    final emDescanso = noite || ausenteAgenda || _ausenteManual;
+    final deveFicar = emDescanso && !dispensada && !_showConfig;
+    // Ausente (agenda ou "estou saindo") sempre apaga; a noite só apaga se
+    // a opção estiver ligada (senão mostra o relógio escuro).
+    final apagar = _ausenteManual || ausenteAgenda || config.getBool('noite', 'desligar_tela', false);
+    if (deveFicar == _modoNoite && (!deveFicar || apagar == _telaDesligada)) return;
     setState(() {
       _modoNoite = deveFicar;
-      if (deveFicar && desligar) _telaDesligada = true;
+      if (deveFicar) _telaDesligada = apagar;
     });
-    // Escurece a tela (brilho da janela) durante a noite; no descanso, a luz
-    // de fundo é desligada de vez (0), sem bloquear o tablet.
-    Sistema.brilho(deveFicar ? (desligar ? 0.0 : 0.05) : null);
-    if (deveFicar && desligar) {
-      // Descanso: luz de fundo desligada + câmera vigiando luz e movimento.
+    // Noite sem apagar: relógio escuro com brilho baixo. Descanso: tela
+    // preta no brilho mínimo, sem bloquear o tablet.
+    Sistema.brilho(deveFicar ? (apagar ? 0.0 : 0.05) : null);
+    if (deveFicar && apagar) {
+      final fim = _ausenteManual
+          ? agora.add(const Duration(hours: 12)) // "estou saindo": só acorda com alguém
+          : proximaHoraCheia(
+              agora,
+              ausenteAgenda && !noite
+                  ? config.getInt('ausente', 'hora_fim', 18)
+                  : config.getInt('noite', 'hora_fim', 6));
       Sistema.desligarTela(
-        acordarEm: proximaHoraCheia(agora, config.getInt('noite', 'hora_fim', 6)),
+        acordarEm: fim,
         luz: config.getBool('noite', 'acordar_com_luz', true),
         proximidade: config.getBool('noite', 'acordar_com_proximidade', false),
         camera: config.getBool('noite', 'acordar_com_camera', true),
@@ -212,17 +233,32 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
       _ultimaTrocaDeTela = DateTime.now();
       if (_telaDesligada) {
         _telaDesligada = false;
-        // Fim do descanso: acende a tela sozinho (se foi o horário que
-        // acabou) e volta a manter a tela ligada.
         if (!dispensada) {
+          // Fim do horário: acende e para de vigiar.
           Sistema.acordarTela();
-        } else {
-          Sistema.pararDescanso();
         }
+        // Acordou por sensor (dispensada): a câmera segue de olho para ver se
+        // ainda há alguém na frente — ela para quando a tela apagar de novo
+        // ou quando o horário acabar.
         Sistema.manterTelaLigada(config.getBool('geral', 'manter_tela_ligada', true));
       }
+      if (!emDescanso) Sistema.pararDescanso();
     }
   }
+
+  /// "Jarvis, estou saindo": tela em descanso até alguém chegar.
+  bool _ausenteManual = false;
+
+  void _modoAusente() {
+    final saindo = AssistenteService.instance.ausente.value;
+    if (saindo == _ausenteManual) return;
+    _ausenteManual = saindo;
+    _noiteDispensadaAte = null;
+    _avaliarModoNoite();
+  }
+
+  /// A câmera ainda vê alguém depois de acender: adia o próximo apagão.
+  void _presenca() => _adiarApagao();
 
   /// A tela foi apagada pelo Modo Noite (opção "desligar a tela").
   bool _telaDesligada = false;
@@ -232,6 +268,13 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
   void _acordouPorSensor() {
     final motivo = Sistema.acordouPorSensor.value;
     if (motivo == null) return;
+    if (_ausenteManual) {
+      // Chegou em casa: sai do modo ausente, para de vigiar e dá as boas-vindas.
+      AssistenteService.instance.ausente.value = false;
+      Sistema.pararDescanso();
+      AssistenteService.instance.boasVindas();
+      return;
+    }
     // Toque = a pessoa quer usar o painel: 10 min. Luz/movimento: o tempo
     // configurado (padrão 2 min).
     _noiteDispensadaAte = DateTime.now().add(motivo.startsWith('toque')

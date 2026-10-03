@@ -97,6 +97,9 @@ class MainActivity : FlutterActivity() {
                 canalSistema?.invokeMethod("acordouPorSensor", motivo)
             }
         }
+        DescansoService.aoPresenca = {
+            runOnUiThread { canalSistema?.invokeMethod("presenca", null) }
+        }
         canalSistema!!.setMethodCallHandler { call, result ->
             when (call.method) {
                 "manterTelaLigada" -> {

@@ -111,6 +111,12 @@ class ConfigManager {
       'cidades_selecionadas': ['hortolandia'],
       'intervalo_atualizacao_min': 60,
     },
+    'ausente': {
+      'agenda_ativa': false,
+      'dias': ['1', '2', '3', '4', '5'], // segunda a sexta
+      'hora_inicio': 8,
+      'hora_fim': 18,
+    },
     'assistente': {
       'nome': 'Jarvis',
       'gemini_modelo': 'gemini-3.8-flash',

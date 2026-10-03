@@ -7,6 +7,13 @@ import 'package:mlion_droid/times.dart';
 
 void main() {
   group('Teste real no tablet (03/10)', () {
+    test('saindo / chegando em casa', () {
+      expect(interpretar('Jarvis, estou saindo').tipo, TipoComando.sair);
+      expect(interpretar('tô saindo').tipo, TipoComando.sair);
+      expect(interpretar('vou trabalhar').tipo, TipoComando.sair);
+      expect(interpretar('cheguei').tipo, TipoComando.chegar);
+      expect(interpretar('voltei, Jarvis').tipo, TipoComando.chegar);
+    });
     test('troca de personalidade por voz', () {
       expect(interpretar('modo agressivo').personalidade, 'agressivo');
       expect(interpretar('Jarvis, fica sincerão').personalidade, 'sincerao');

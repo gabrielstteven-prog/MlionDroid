@@ -35,6 +35,8 @@ enum TipoComando {
   resumo,
   abrirTela,
   personalidade,
+  sair, // "estou saindo": modo ausente
+  chegar, // "cheguei"
   desconhecido,
 }
 
@@ -110,6 +112,16 @@ Comando interpretar(String falado) {
     if (itens.isNotEmpty) {
       return Comando(TipoComando.adicionarCompra, falado, itens: itens);
     }
+  }
+
+  // Saindo / chegando em casa
+  if (RegExp(r'\b(estou|to|ja vou|vou)\s+(saindo|sair|embora)\b|\bsaindo de casa\b|'
+          r'\bmodo ausente\b|\bvou trabalhar\b')
+      .hasMatch(f)) {
+    return Comando(TipoComando.sair, falado);
+  }
+  if (RegExp(r'\b(cheguei|voltei|ja cheguei|estou em casa|to em casa)\b').hasMatch(f)) {
+    return Comando(TipoComando.chegar, falado);
   }
 
   // Personalidade: "modo agressivo", "fica sincerão", "volta ao modo normal"
@@ -206,6 +218,27 @@ class AssistenteService extends ChangeNotifier {
 
   /// Pedido para o rodízio mostrar uma tela ("mostra o clima").
   final ValueNotifier<String?> pedidoDeTela = ValueNotifier(null);
+
+  /// Modo ausente ("estou saindo"): a tela descansa até alguém chegar.
+  final ValueNotifier<bool> ausente = ValueNotifier(false);
+
+  /// Boas-vindas quando alguém chega com o modo ausente ligado.
+  Future<void> boasVindas() async {
+    final nome = JarvisService.instance.nomeUsuario;
+    final h = DateTime.now().hour;
+    final saudacao = h < 12 ? 'Bom dia' : (h < 18 ? 'Boa tarde' : 'Boa noite');
+    ultimaFala = '';
+    ultimaResposta = '$saudacao${nome.isEmpty ? '' : ', $nome'}! Bem-vindo de volta.';
+    estado = EstadoAssistente.respondendo;
+    notifyListeners();
+    await VozService.instance.falar(ultimaResposta);
+    Timer(const Duration(seconds: 4), () {
+      if (estado == EstadoAssistente.respondendo) {
+        estado = EstadoAssistente.parado;
+        notifyListeners();
+      }
+    });
+  }
 
   bool get algumTocando => temporizadores.any((t) => t.tocando);
 
@@ -313,6 +346,14 @@ class AssistenteService extends ChangeNotifier {
         final itens = await ResumoService.instance.montar();
         if (itens.isEmpty) return 'Ainda não tenho informações do seu dia.';
         return itens.map((i) => i.texto).join(' ').replaceAll('°', ' graus');
+      case TipoComando.sair:
+        // Dá tempo de falar a despedida antes de apagar a tela.
+        Timer(const Duration(seconds: 5), () => ausente.value = true);
+        return 'Até mais! Vou descansar a tela. Quando você chegar, eu acendo.';
+      case TipoComando.chegar:
+        ausente.value = false;
+        final nome = JarvisService.instance.nomeUsuario;
+        return 'Bem-vindo de volta${nome.isEmpty ? '' : ', $nome'}!';
       case TipoComando.personalidade:
         await JarvisService.instance.trocarPersonalidade(c.personalidade!);
         return switch (c.personalidade) {

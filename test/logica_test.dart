@@ -6,6 +6,17 @@ import 'package:mlion_droid/util.dart';
 
 void main() {
   group('Descanso da tela', () {
+    test('ausência agendada: seg–sex 8h–18h', () {
+      const uteis = [1, 2, 3, 4, 5];
+      expect(emAusenciaAgendada(DateTime(2026, 10, 5, 9), uteis, 8, 18), isTrue); // segunda
+      expect(emAusenciaAgendada(DateTime(2026, 10, 5, 19), uteis, 8, 18), isFalse);
+      expect(emAusenciaAgendada(DateTime(2026, 10, 3, 9), uteis, 8, 18), isFalse); // sábado
+    });
+    test('janela que vira a noite conta pelo dia em que começou', () {
+      // Sexta 22h até sábado 6h: sábado 2h ainda vale (começou na sexta).
+      expect(emAusenciaAgendada(DateTime(2026, 10, 3, 2), [5], 22, 6), isTrue);
+      expect(emAusenciaAgendada(DateTime(2026, 10, 4, 2), [5], 22, 6), isFalse);
+    });
     test('acorda no fim do horário: hoje se ainda não passou, senão amanhã', () {
       expect(proximaHoraCheia(DateTime(2026, 10, 3, 23, 10), 6), DateTime(2026, 10, 4, 6));
       expect(proximaHoraCheia(DateTime(2026, 10, 4, 0, 5), 6), DateTime(2026, 10, 4, 6));

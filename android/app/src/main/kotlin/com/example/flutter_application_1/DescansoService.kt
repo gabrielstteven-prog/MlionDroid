@@ -51,6 +51,9 @@ class DescansoService : Service(), SensorEventListener {
         /** Quem acordou a tela ("luz" / "proximidade"); a Activity avisa o Dart. */
         var aoAcordar: ((String) -> Unit)? = null
 
+        /** Depois de acender: a câmera ainda vê alguém na frente (a cada ~10 s). */
+        var aoPresenca: (() -> Unit)? = null
+
         fun iniciar(ctx: Context, luz: Boolean, proximidade: Boolean, camera: Boolean) {
             val i = Intent(ctx, DescansoService::class.java)
                 .putExtra(EXTRA_LUZ, luz)
@@ -69,6 +72,12 @@ class DescansoService : Service(), SensorEventListener {
     private var luzBase = -1f // luz do cômodo quando a tela apagou
     private var acordou = false
 
+    // Depois de acender, a câmera continua olhando só para saber se ainda há
+    // alguém na frente: enquanto houver, a tela não apaga.
+    private var presenca = false
+    private var ultimaPresenca = 0L
+    private var camHandler: Handler? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -84,6 +93,7 @@ class DescansoService : Service(), SensorEventListener {
         sensores = sm
         luzBase = -1f
         acordou = false
+        presenca = false
         // Prefere a versão "wake-up" do sensor: ela entrega a leitura mesmo
         // com o processador do tablet dormindo.
         if (usarLuz) {
@@ -136,8 +146,22 @@ class DescansoService : Service(), SensorEventListener {
         )
         wl.acquire(10_000)
         aoAcordar?.invoke(motivo)
-        fecharCamera()
-        stopSelf() // o Dart religa o descanso quando a tela apagar de novo
+        sensores?.unregisterListener(this)
+        val h = camHandler
+        if (camDevice != null && h != null) {
+            // Modo presença: destrava a exposição (a luz pode ter acendido) e
+            // segue avisando enquanto houver movimento na frente.
+            h.post {
+                presenca = true
+                camInicio = SystemClock.elapsedRealtime()
+                exposicaoTravada = false
+                anterior = null
+                repetir(travar = false, h)
+            }
+        } else {
+            fecharCamera()
+            stopSelf() // o Dart religa o descanso quando a tela apagar de novo
+        }
     }
 
     // ── Câmera: luz acendendo e movimento ─────────────────────────────────
@@ -171,6 +195,7 @@ class DescansoService : Service(), SensorEventListener {
             val ht = HandlerThread("descanso-camera").also { it.start() }
             camThread = ht
             val h = Handler(ht.looper)
+            camHandler = h
             val r = ImageReader.newInstance(tam.width, tam.height, ImageFormat.YUV_420_888, 2)
             leitor = r
             r.setOnImageAvailableListener({ rd ->
@@ -225,7 +250,7 @@ class DescansoService : Service(), SensorEventListener {
     }
 
     private fun analisar(img: Image, h: Handler) {
-        if (acordou) return
+        if (acordou && !presenca) return
         val agora = SystemClock.elapsedRealtime()
         if (agora - ultimaAnalise < 330) return
         ultimaAnalise = agora
@@ -275,6 +300,15 @@ class DescansoService : Service(), SensorEventListener {
             Log.i(TAG, "câmera: brilho ${"%.0f".format(media)} (ref ${"%.0f".format(baseLum)}), mudança ${"%.2f".format(fracao)}")
         }
 
+        if (presenca) {
+            if (media > 30 && fracao > 0.05 && agora - ultimaPresenca > 10_000) {
+                ultimaPresenca = agora
+                Log.i(TAG, "presença: alguém na frente (mudança ${"%.2f".format(fracao)})")
+                aoPresenca?.invoke()
+            }
+            return
+        }
+
         // 1) Luz do cômodo acendeu: brilho bem acima da referência.
         if (media > baseLum + 35 && media > 50) {
             acordar("luz", "câmera ${"%.0f".format(baseLum)} -> ${"%.0f".format(media)}")
@@ -300,6 +334,7 @@ class DescansoService : Service(), SensorEventListener {
         camDevice = null
         leitor = null
         camThread = null
+        camHandler = null
     }
 
     private fun mostrarAviso(comCamera: Boolean) {

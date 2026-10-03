@@ -98,13 +98,23 @@ class Sistema {
   static final ValueNotifier<String?> acordouPorSensor = ValueNotifier(null);
 
   static bool _eventosProntos = false;
+  /// A câmera ainda vê alguém na frente depois de acender (conta a cada aviso).
+  static final ValueNotifier<int> presenca = ValueNotifier(0);
+
+  /// Liga a escuta dos avisos do Android (sensores, presença). Chamado no
+  /// início do app.
+  static void iniciarEventos() => _prepararEventos();
+
   static void _prepararEventos() {
     if (_eventosProntos) return;
     _eventosProntos = true;
     _canal.setMethodCallHandler((call) async {
-      if (call.method == 'acordouPorSensor') {
-        // Valor novo a cada vez (com a hora) para o ouvinte sempre disparar.
-        acordouPorSensor.value = '${call.arguments}@${DateTime.now().millisecondsSinceEpoch}';
+      switch (call.method) {
+        case 'acordouPorSensor':
+          // Valor novo a cada vez (com a hora) para o ouvinte sempre disparar.
+          acordouPorSensor.value = '${call.arguments}@${DateTime.now().millisecondsSinceEpoch}';
+        case 'presenca':
+          presenca.value++;
       }
     });
   }
