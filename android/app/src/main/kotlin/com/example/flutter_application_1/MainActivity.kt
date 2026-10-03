@@ -137,12 +137,20 @@ class MainActivity : FlutterActivity() {
                     if (acordarEm > 0) agendarDespertar(acordarEm)
                     val luz = call.argument<Boolean>("luz") ?: false
                     val prox = call.argument<Boolean>("proximidade") ?: false
-                    if (luz || prox) DescansoService.iniciar(this, luz, prox)
+                    val cam = call.argument<Boolean>("camera") ?: false
+                    if (luz || prox || cam) DescansoService.iniciar(this, luz, prox, cam)
                     result.success(desligarTela())
                 }
                 "acordarTela" -> {
                     DescansoService.parar(this)
                     acordarTela()
+                    result.success(null)
+                }
+                "cameraPermitida" -> result.success(
+                    checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                )
+                "pedirCamera" -> {
+                    requestPermissions(arrayOf(Manifest.permission.CAMERA), 78)
                     result.success(null)
                 }
                 "pararDescanso" -> {
@@ -236,6 +244,10 @@ class MainActivity : FlutterActivity() {
     private var ttsPronto = false
     private var falaPendente: String? = null
 
+    private fun volumeMaximo() = Bundle().apply {
+        putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1f)
+    }
+
     private fun falar(texto: String) {
         if (texto.isBlank()) return
         if (tts == null) {
@@ -244,13 +256,21 @@ class MainActivity : FlutterActivity() {
                 ttsPronto = status == TextToSpeech.SUCCESS
                 if (ttsPronto) {
                     tts?.language = Locale("pt", "BR")
-                    falaPendente?.let { tts?.speak(it, TextToSpeech.QUEUE_FLUSH, null, "mlion") }
+                    // Mesmo canal (e volume) das músicas: o padrão do TTS em alguns
+                    // tablets é um canal com volume baixo.
+                    tts?.setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                    )
+                    falaPendente?.let { tts?.speak(it, TextToSpeech.QUEUE_FLUSH, volumeMaximo(), "mlion") }
                     falaPendente = null
                 }
             }
             return
         }
-        if (ttsPronto) tts?.speak(texto, TextToSpeech.QUEUE_FLUSH, null, "mlion")
+        if (ttsPronto) tts?.speak(texto, TextToSpeech.QUEUE_FLUSH, volumeMaximo(), "mlion")
     }
 
     // ── Áudio pronto (voz da ElevenLabs em MP3) ────────────────────────────
@@ -265,7 +285,8 @@ class MainActivity : FlutterActivity() {
             val p = MediaPlayer()
             p.setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    // Canal de MÍDIA: o "assistente" tem volume próprio e baixo.
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
@@ -273,6 +294,7 @@ class MainActivity : FlutterActivity() {
             p.setOnCompletionListener { terminarAudio(true) }
             p.setOnErrorListener { _, _, _ -> terminarAudio(false); true }
             p.prepare()
+            reforcarVolume(p.audioSessionId)
             p.start()
             player = p
         } catch (e: Exception) {
@@ -281,10 +303,26 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun terminarAudio(ok: Boolean) {
+        reforco?.release()
+        reforco = null
         player?.release()
         player = null
         playerResult?.success(ok)
         playerResult = null
+    }
+
+    // Reforço de volume (+8 dB) na voz: alto-falante de tablet é fraco.
+    private var reforco: android.media.audiofx.LoudnessEnhancer? = null
+
+    private fun reforcarVolume(sessao: Int) {
+        try {
+            reforco?.release()
+            reforco = android.media.audiofx.LoudnessEnhancer(sessao).apply {
+                setTargetGain(800)
+                enabled = true
+            }
+        } catch (_: Exception) {
+        }
     }
 
     private fun pararAudio() {

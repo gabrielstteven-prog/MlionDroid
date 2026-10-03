@@ -1503,11 +1503,38 @@ class _TelaConfigState extends State<TelaConfig>
           ),
           const SizedBox(height: 8),
           _toggleConfig(
-            titulo: 'Acender quando alguém chegar perto da tela',
-            subtitulo: 'Sensor de proximidade (perto do topo da tela)',
+            titulo: 'Acender quando a câmera notar alguém',
+            subtitulo: 'Luz acendendo ou movimento. Nada é gravado nem sai do tablet',
             categoria: 'noite',
-            chave: 'acordar_com_proximidade',
+            chave: 'acordar_com_camera',
             valorPadrao: true,
+          ),
+          const SizedBox(height: 8),
+          FutureBuilder<bool>(
+            key: ValueKey('cam$_checagemAdmin'),
+            future: Sistema.cameraPermitida(),
+            builder: (context, snap) => snap.data == true
+                ? const SizedBox.shrink()
+                : Row(children: [
+                    const Icon(Icons.videocam_off_rounded, color: Colors.orangeAccent, size: 22),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text('Falta a permissão da câmera.',
+                          style: GoogleFonts.figtree(color: Colors.white70, fontSize: 14)),
+                    ),
+                    FilledButton(
+                      onPressed: () async {
+                        await Sistema.pedirCamera();
+                        for (var i = 0; i < 10; i++) {
+                          await Future.delayed(const Duration(seconds: 2));
+                          if (!mounted) return;
+                          setState(() => _checagemAdmin++);
+                          if (await Sistema.cameraPermitida()) return;
+                        }
+                      },
+                      child: const Text('Permitir câmera'),
+                    ),
+                  ]),
           ),
           const SizedBox(height: 12),
           Row(children: [
@@ -1527,15 +1554,15 @@ class _TelaConfigState extends State<TelaConfig>
             onPressed: () => Sistema.desligarTela(
               acordarEm: DateTime.now().add(const Duration(minutes: 5)),
               luz: config.getBool('noite', 'acordar_com_luz', true),
-              proximidade: config.getBool('noite', 'acordar_com_proximidade', true),
+              camera: config.getBool('noite', 'acordar_com_camera', true),
             ),
             icon: const Icon(Icons.bedtime_rounded),
             label: const Text('Testar agora: apagar a tela'),
           ),
           const SizedBox(height: 6),
           Text(
-            'A tela apaga. Acenda a luz ou aproxime a mão do topo da tela para ela '
-            'acender. Se nada acontecer, ela acende sozinha em 5 minutos.',
+            'A tela apaga. Apague a luz do cômodo e acenda de novo, ou passe na frente do '
+            'tablet com alguma luz acesa. Se nada acontecer, ela acende sozinha em 5 minutos.',
             style: GoogleFonts.figtree(color: Colors.white38, fontSize: 12.5, height: 1.4),
           ),
           const Divider(color: Colors.white10, height: 28),

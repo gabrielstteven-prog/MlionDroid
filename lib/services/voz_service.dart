@@ -80,6 +80,7 @@ class VozService {
       try {
         final arquivo = await _audioPremium(t);
         if (arquivo != null && await Sistema.tocarAudio(arquivo.path)) {
+          debugPrint('Voz: ElevenLabs');
           ultimoErro = '';
           return;
         }
@@ -91,6 +92,7 @@ class VozService {
         ultimoErro = explicarErro('$e');
       }
     }
+    debugPrint('Voz: Android${ultimoErro.isEmpty ? '' : ' ($ultimoErro)'}');
     await Sistema.falar(t);
   }
 

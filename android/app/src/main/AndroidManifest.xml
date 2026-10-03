@@ -12,6 +12,10 @@
          com a tela apagada. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <!-- Descanso: a câmera percebe a luz acendendo ou alguém passando (nada é gravado). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- As fotos ficam na pasta privada do app (copiadas pelo seletor de
          arquivos), então não é mais preciso acesso total ao armazenamento. -->
 
@@ -39,7 +43,7 @@
         <service
             android:name=".DescansoService"
             android:exported="false"
-            android:foregroundServiceType="specialUse">
+            android:foregroundServiceType="specialUse|camera">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Acender a tela do painel de parede quando a luz do cômodo acende ou alguém se aproxima, durante o horário de descanso da tela." />

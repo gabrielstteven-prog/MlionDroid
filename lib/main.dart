@@ -202,7 +202,8 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
       Sistema.desligarTela(
         acordarEm: proximaHoraCheia(agora, config.getInt('noite', 'hora_fim', 6)),
         luz: config.getBool('noite', 'acordar_com_luz', true),
-        proximidade: config.getBool('noite', 'acordar_com_proximidade', true),
+        proximidade: config.getBool('noite', 'acordar_com_proximidade', false),
+        camera: config.getBool('noite', 'acordar_com_camera', true),
       );
     }
     if (!deveFicar) {

@@ -171,7 +171,8 @@ AÇÕES: você não executa nada sozinho, quem executa é o app. Se o pedido for
 - cancelar temporizador: {"acao":"cancelar_temporizador"}
 - adicionar na lista de compras: {"acao":"compras","itens":["item 1","item 2"]}
 - mostrar uma tela: {"acao":"tela","tela":"clima|palmeiras|proxima_partida|classificacao|calendario|compras|brasil|regiao|fotos|spotify"}
-Nunca diga que fez uma ação sem devolver o JSON dela.
+- trocar sua personalidade/modo: {"acao":"personalidade","modo":"mordomo|sincerao|agressivo|comediante"}
+Nunca diga que fez uma ação sem devolver o JSON dela. Se pedirem uma ação que NÃO está nessa lista (ex.: "modo noturno", ligar a luz, tocar música), diga claramente que ainda não consegue fazer isso — nunca finja que fez.
 Use os dados abaixo quando forem relevantes. Se a resposta não estiver nos dados e for algo que muda (preço, resultado, notícia), diga que não tem essa informação agora em vez de inventar.
 Dados da casa agora:
 $contexto''';

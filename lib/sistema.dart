@@ -72,19 +72,38 @@ class Sistema {
   /// Com [luz]/[proximidade], um serviço vigia esses sensores e acende a
   /// tela quando a luz do cômodo acende ou alguém chega perto.
   static Future<bool> desligarTela(
-      {required DateTime acordarEm, bool luz = false, bool proximidade = false}) async {
+      {required DateTime acordarEm,
+      bool luz = false,
+      bool proximidade = false,
+      bool camera = false}) async {
     _prepararEventos();
     try {
       return await _canal.invokeMethod<bool>('desligarTela', {
             'acordarEm': acordarEm.millisecondsSinceEpoch,
             'luz': luz,
             'proximidade': proximidade,
+            'camera': camera,
           }) ??
           false;
     } catch (e) {
       debugPrint('Sistema.desligarTela: $e');
       return false;
     }
+  }
+
+  /// O app pode usar a câmera (descanso inteligente)?
+  static Future<bool> cameraPermitida() async {
+    try {
+      return await _canal.invokeMethod<bool>('cameraPermitida') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> pedirCamera() async {
+    try {
+      await _canal.invokeMethod('pedirCamera');
+    } catch (_) {}
   }
 
   /// Para de vigiar os sensores do descanso.

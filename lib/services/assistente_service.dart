@@ -450,6 +450,11 @@ Comando? acaoDaIa(String resposta, String falado) {
       return Comando(TipoComando.temporizador, falado, duracao: Duration(seconds: s));
     case 'cancelar_temporizador':
       return Comando(TipoComando.cancelarTemporizador, falado);
+    case 'personalidade':
+      const modos = {'mordomo', 'sincerao', 'agressivo', 'comediante'};
+      final modo = '${j['modo'] ?? ''}';
+      if (!modos.contains(modo)) return null;
+      return Comando(TipoComando.personalidade, falado, personalidade: modo);
     case 'compras':
       final itens = (j['itens'] as List? ?? const [])
           .map((e) => '$e'.trim())

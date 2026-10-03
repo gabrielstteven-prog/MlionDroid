@@ -39,6 +39,8 @@ void main() {
       expect(acaoDaIa('{"acao":"tela","tela":"clima"}', 'x')!.tela, 'clima');
       expect(acaoDaIa('O Palmeiras foi fundado em 1914.', 'x'), isNull);
       expect(acaoDaIa('{"acao":"tela","tela":"hackear"}', 'x'), isNull);
+      expect(acaoDaIa('{"acao":"personalidade","modo":"agressivo"}', 'x')!.personalidade,
+          'agressivo');
     });
   });
 
