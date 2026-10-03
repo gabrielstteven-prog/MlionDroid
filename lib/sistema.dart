@@ -26,6 +26,36 @@ class Sistema {
     }
   }
 
+  /// Fala o texto em voz alta (TTS nativo do Android, em português).
+  static Future<void> falar(String texto) async {
+    try {
+      await _canal.invokeMethod('falar', {'texto': texto});
+    } catch (e) {
+      debugPrint('Sistema.falar: $e');
+    }
+  }
+
+  static Future<void> pararFala() async {
+    try {
+      await _canal.invokeMethod('pararFala');
+    } catch (_) {}
+  }
+
+  /// Toca o som de alarme do aparelho (temporizador).
+  static Future<void> tocarAlarme() async {
+    try {
+      await _canal.invokeMethod('tocarAlarme');
+    } catch (e) {
+      debugPrint('Sistema.tocarAlarme: $e');
+    }
+  }
+
+  static Future<void> pararAlarme() async {
+    try {
+      await _canal.invokeMethod('pararAlarme');
+    } catch (_) {}
+  }
+
   /// Abre o reconhecimento de voz do Android e devolve o texto falado
   /// ('' se o usuário cancelar ou não houver reconhecimento disponível).
   static Future<String> ouvir({String prompt = 'Fale agora...'}) async {

@@ -42,7 +42,7 @@ class TelaNoite extends StatelessWidget {
                 children: [
                   Text(
                     horaMinuto(agora),
-                    style: GoogleFonts.orbitron(
+                    style: GoogleFonts.bricolageGrotesque(
                       color: cor,
                       fontSize: 120,
                       fontWeight: FontWeight.w300,
@@ -53,7 +53,7 @@ class TelaNoite extends StatelessWidget {
                   Text(
                     '${diaSemanaLongo(agora)}, ${agora.day} de '
                     '${mesesLongos[agora.month - 1]}',
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.figtree(
                         color: cor.withValues(alpha: 0.7), fontSize: 22),
                   ),
                   if (clima != null) ...[
@@ -62,14 +62,14 @@ class TelaNoite extends StatelessWidget {
                       '${emojiClima(clima.codigo, ehDia: clima.ehDia)}  '
                       '${clima.temp}°C  •  amanhã '
                       '${clima.proximosDias.isNotEmpty ? '${clima.proximosDias.first.min}° / ${clima.proximosDias.first.max}°' : '--'}',
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.figtree(
                           color: cor.withValues(alpha: 0.6), fontSize: 20),
                     ),
                   ],
                   const SizedBox(height: 30),
                   Text(
                     'Toque para acordar o painel',
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.figtree(
                         color: cor.withValues(alpha: 0.25), fontSize: 13),
                   ),
                 ],

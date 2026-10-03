@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-
 import 'config_manager.dart';
+import 'design/tema.dart';
 import 'services/news_service.dart';
-import 'util.dart';
 import 'widgets/tela_noticias.dart';
 
 /// Cidades da região (feed G1 Campinas e Região). Usado também pelas
@@ -49,20 +47,13 @@ class TelaRegiao extends StatelessWidget {
 
     return TelaNoticias(
       aoTerminar: aoTerminar,
-      corDestaque: Colors.cyanAccent,
-      tituloLeitor: 'G1 — REGIÃO',
-      iconeSemImagem: Icons.newspaper,
+      icone: Icons.location_city_rounded,
+      titulo: 'Notícias da região',
+      subtitulo: selecionadas.map((c) => c.nome).join(', '),
+      destaque: Destaques.regiao,
       velocidadePxSeg: cfg.getInt('regiao', 'duracao_scroll_px_seg', 35),
       pausaFinalSeg: cfg.getInt('regiao', 'pausa_final_seg', 10),
-      corDoRotulo: (n) => cores[n.rotulo] ?? Colors.white70,
-      fundo: LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          parseCor(cfg.get('regiao', 'cor_gradiente_top'), 0xFF1a237e),
-          parseCor(cfg.get('regiao', 'cor_gradiente_bottom'), 0xFF000000),
-        ],
-      ),
+      corDoRotulo: (n) => cores[n.rotulo] ?? Cores.textoSecundario,
       carregar: () async {
         final r = await NewsService.instance.buscar(
           const [FonteRss(_feedRegiao, _rotuloRegiao)],
@@ -78,54 +69,6 @@ class TelaRegiao extends StatelessWidget {
         );
         return (noticias: filtradas, atualizadoEm: r.atualizadoEm);
       },
-      cabecalho: (context, r, manual) => Padding(
-        padding: EdgeInsets.only(top: r.sp(28), bottom: r.sp(10)),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.location_city, color: Colors.cyanAccent, size: r.icon(46)),
-                const SizedBox(width: 12),
-                Text('REGIÃO',
-                    style: GoogleFonts.rajdhani(
-                        fontSize: r.fs(40),
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        letterSpacing: 3)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              alignment: WrapAlignment.center,
-              children: [
-                for (final c in selecionadas)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: c.cor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: c.cor.withValues(alpha: 0.4)),
-                    ),
-                    child: Text(c.nome,
-                        style: GoogleFonts.rajdhani(
-                            color: c.cor,
-                            fontSize: r.fs(13),
-                            fontWeight: FontWeight.bold)),
-                  ),
-              ],
-            ),
-            Container(
-              width: r.dividerWidth(),
-              height: 2,
-              color: Colors.cyanAccent,
-              margin: const EdgeInsets.only(top: 10),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

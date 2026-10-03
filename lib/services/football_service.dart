@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 
 import 'package:http/http.dart' as http;
 
@@ -324,4 +327,130 @@ class FootballService {
     }
     return grupos;
   }
+
+  // ── Escalação ────────────────────────────────────────────────────────────
+  /// Escalação do jogo (a ESPN publica perto do horário da partida; antes
+  /// disso a lista vem vazia).
+  Future<List<Escalacao>> escalacao(String eventId) async {
+    final entrada = await buscarComCache<Map<String, dynamic>>(
+      chave: 'futebol_escalacao_$eventId',
+      validade: const Duration(minutes: 10),
+      buscar: () => _getJson('$_base/site/v2/sports/soccer/all/summary?event=$eventId'),
+    );
+    if (entrada == null) return [];
+    return parseEscalacao(entrada.dados);
+  }
+
+  static List<Escalacao> parseEscalacao(Map<String, dynamic> json) {
+    final lista = <Escalacao>[];
+    for (final r in (json['rosters'] as List? ?? []).cast<Map<String, dynamic>>()) {
+      final team = r['team'] as Map<String, dynamic>? ?? {};
+      final jogadores = <Jogador>[];
+      for (final j in (r['roster'] as List? ?? []).cast<Map<String, dynamic>>()) {
+        if (j['starter'] != true) continue;
+        final atleta = j['athlete'] as Map<String, dynamic>? ?? {};
+        jogadores.add(Jogador(
+          '${j['jersey'] ?? ''}',
+          atleta['shortName'] as String? ?? atleta['displayName'] as String? ?? '',
+          (j['position'] as Map?)?['abbreviation'] as String? ?? '',
+        ));
+      }
+      if (jogadores.isEmpty) continue;
+      lista.add(Escalacao(
+        int.tryParse('${team['id']}') ?? -1,
+        team['shortDisplayName'] as String? ?? team['displayName'] as String? ?? '',
+        r['formation'] as String? ?? '',
+        jogadores,
+      ));
+    }
+    return lista;
+  }
+
+  // ── Monitor de dia de jogo ───────────────────────────────────────────────
+  /// Jogo do time que está perto (até 90 min antes), rolando, ou que
+  /// terminou há menos de 30 min. null = nenhum jogo agora.
+  final ValueNotifier<Partida?> jogoDoMomento = ValueNotifier(null);
+
+  /// Último acontecimento ao vivo ("Gol do Palmeiras!") — a barra superior
+  /// mostra isso no ticker e o app pode falar em voz alta.
+  final ValueNotifier<String?> ultimoLance = ValueNotifier(null);
+
+  Timer? _monitor;
+  String? _placarAnterior;
+
+  void iniciarMonitor() {
+    _monitor?.cancel();
+    _verificarJogo();
+  }
+
+  Future<void> _verificarJogo() async {
+    Partida? momento;
+    try {
+      final r = await proximosJogos();
+      final agora = DateTime.now();
+      for (final p in r?.valor ?? const <Partida>[]) {
+        final ate = p.data.difference(agora).inMinutes;
+        if (p.aoVivo || (p.agendada && ate <= 90 && ate > -150)) {
+          momento = p;
+          break;
+        }
+      }
+      // Jogo recém-encerrado: continua em destaque por 30 min.
+      final atual = jogoDoMomento.value;
+      if (momento == null &&
+          atual != null &&
+          agora.difference(atual.data).inMinutes < 150 + 30) {
+        final res = await ultimosResultados(limite: 1);
+        final fim = res?.valor.firstOrNull;
+        if (fim != null && fim.id == atual.id) momento = fim;
+      }
+    } catch (_) {}
+
+    _detectarGol(momento);
+    jogoDoMomento.value = momento;
+
+    // Perto do jogo: confere a cada minuto. Longe: a cada 15 min.
+    _monitor = Timer(
+        momento != null ? const Duration(minutes: 1) : const Duration(minutes: 15),
+        _verificarJogo);
+  }
+
+  void _detectarGol(Partida? p) {
+    if (p == null || (!p.aoVivo && !p.encerrada)) {
+      _placarAnterior = null;
+      return;
+    }
+    final placar = '${p.id}:${p.mandante.gols ?? 0}-${p.visitante.gols ?? 0}';
+    final antes = _placarAnterior;
+    _placarAnterior = placar;
+    if (antes == null || antes == placar || !antes.startsWith('${p.id}:')) {
+      if (p.encerrada && antes != null && antes.startsWith('${p.id}:') &&
+          ultimoLance.value?.startsWith('Fim de jogo') != true) {
+        ultimoLance.value =
+            'Fim de jogo: ${p.mandante.nome} ${p.mandante.gols} x ${p.visitante.gols} ${p.visitante.nome}';
+      }
+      return;
+    }
+    final golsAntes = antes.split(':').last.split('-').map(int.parse).toList();
+    final casaMarcou = (p.mandante.gols ?? 0) > golsAntes[0];
+    final quem = casaMarcou ? p.mandante : p.visitante;
+    final nosso = quem.id == timeAtual.espnId;
+    ultimoLance.value = '${nosso ? 'Gol do ${quem.nome}!' : 'Gol do ${quem.nome}.'} '
+        '${p.mandante.nome} ${p.mandante.gols} x ${p.visitante.gols} ${p.visitante.nome}';
+  }
+}
+
+class Jogador {
+  final String camisa;
+  final String nome;
+  final String posicao;
+  const Jogador(this.camisa, this.nome, this.posicao);
+}
+
+class Escalacao {
+  final int timeId;
+  final String time;
+  final String formacao;
+  final List<Jogador> titulares;
+  const Escalacao(this.timeId, this.time, this.formacao, this.titulares);
 }

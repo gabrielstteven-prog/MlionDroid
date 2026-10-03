@@ -2,9 +2,13 @@ package com.example.flutter_application_1
 
 import android.app.Activity
 import android.content.Intent
+import android.media.Ringtone
+import android.media.RingtoneManager
 import android.os.Bundle
 import android.speech.RecognizerIntent
+import android.speech.tts.TextToSpeech
 import android.view.WindowManager
+import java.util.Locale
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -67,9 +71,69 @@ class MainActivity : FlutterActivity() {
                     window.attributes = attrs
                     result.success(null)
                 }
+                "falar" -> {
+                    val texto = call.argument<String>("texto") ?: ""
+                    falar(texto)
+                    result.success(null)
+                }
+                "pararFala" -> {
+                    tts?.stop()
+                    result.success(null)
+                }
+                "tocarAlarme" -> {
+                    tocarAlarme()
+                    result.success(null)
+                }
+                "pararAlarme" -> {
+                    alarme?.stop()
+                    alarme = null
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }
+    }
+
+    // ── Voz (Text-to-Speech nativo do Android, sem custo) ──────────────────
+    private var tts: TextToSpeech? = null
+    private var ttsPronto = false
+    private var falaPendente: String? = null
+
+    private fun falar(texto: String) {
+        if (texto.isBlank()) return
+        if (tts == null) {
+            falaPendente = texto
+            tts = TextToSpeech(this) { status ->
+                ttsPronto = status == TextToSpeech.SUCCESS
+                if (ttsPronto) {
+                    tts?.language = Locale("pt", "BR")
+                    falaPendente?.let { tts?.speak(it, TextToSpeech.QUEUE_FLUSH, null, "mlion") }
+                    falaPendente = null
+                }
+            }
+            return
+        }
+        if (ttsPronto) tts?.speak(texto, TextToSpeech.QUEUE_FLUSH, null, "mlion")
+    }
+
+    // ── Alarme do temporizador ─────────────────────────────────────────────
+    private var alarme: Ringtone? = null
+
+    private fun tocarAlarme() {
+        try {
+            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            alarme?.stop()
+            alarme = RingtoneManager.getRingtone(this, uri)
+            alarme?.play()
+        } catch (_: Exception) {
+        }
+    }
+
+    override fun onDestroy() {
+        tts?.shutdown()
+        alarme?.stop()
+        super.onDestroy()
     }
 
     private fun startSpeechRecognition(language: String, prompt: String) {

@@ -72,6 +72,7 @@ class ConfigManager {
     'proxima_partida': {
       'duracao_seg': 20,
       'mostrar_canais': true,
+      'falar_gols': true,
       'intervalo_atualizacao_min': 240,
     },
     'classificacao': {
@@ -115,6 +116,7 @@ class ConfigManager {
       'hora_fim': 10,
       'duracao_longa_seg': 90,
       'duracao_curta_seg': 20,
+      'falar_resumo': false,
     },
     'fotos': {
       'duracao_por_foto_seg': 8,
@@ -126,7 +128,6 @@ class ConfigManager {
     'barra_info': {
       'mostrar_clima': true,
       'mostrar_ticker': true,
-      'aurora_ativa': true,
       'tipo_ticker': 'misturado',
       'intervalo_clima_min': 10,
       'rotacao_ticker_seg': 12,

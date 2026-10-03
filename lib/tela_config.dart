@@ -255,7 +255,7 @@ class _TelaConfigState extends State<TelaConfig>
                 color: sel ? _accent.withValues(alpha: 0.4) : _border),
           ),
           child: Text(label,
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.figtree(
                   color: sel ? _accent : Colors.white60,
                   fontSize: 13,
                   fontWeight: sel ? FontWeight.w700 : FontWeight.w500)),
@@ -298,13 +298,13 @@ class _TelaConfigState extends State<TelaConfig>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('CONFIGURAÇÕES',
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.figtree(
                         color: Colors.white,
                         fontSize: r.fs(22),
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.2)),
                 Text('MlionDroid Center • Painel de Controle',
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.figtree(
                         color: Colors.white54,
                         fontSize: r.fs(13),
                         letterSpacing: 0.4),
@@ -365,7 +365,7 @@ class _TelaConfigState extends State<TelaConfig>
             Icon(icon, color: color, size: 17),
             const SizedBox(width: 8),
             Text(label,
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.figtree(
                     color: color,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -414,7 +414,7 @@ class _TelaConfigState extends State<TelaConfig>
             const Icon(Icons.save_rounded, color: Colors.black, size: 18),
             const SizedBox(width: 8),
             Text('SALVAR',
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.figtree(
                     color: Colors.black,
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
@@ -447,7 +447,7 @@ class _TelaConfigState extends State<TelaConfig>
                 return Text(
                   v.isNotEmpty ? 'v$v • MlionDroid' : 'MlionDroid',
                   style:
-                      GoogleFonts.poppins(color: Colors.white12, fontSize: 12),
+                      GoogleFonts.figtree(color: Colors.white12, fontSize: 12),
                 );
               },
             ),
@@ -496,7 +496,7 @@ class _TelaConfigState extends State<TelaConfig>
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.figtree(
                 color: sel ? Colors.white : Colors.white70,
                 fontSize: 11.5,
                 fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
@@ -596,7 +596,7 @@ class _TelaConfigState extends State<TelaConfig>
               ),
               const SizedBox(height: 16),
               Text(_sobreAppNome,
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.figtree(
                       color: Colors.white,
                       fontSize: 26,
                       fontWeight: FontWeight.w700)),
@@ -607,7 +607,7 @@ class _TelaConfigState extends State<TelaConfig>
                   final v = UpdateManager.instance.versaoInstalada;
                   return Text(
                     v.isNotEmpty ? 'Versão $v' : 'Versão...',
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.figtree(
                         color: Colors.white54, fontSize: 14),
                   );
                 },
@@ -622,7 +622,7 @@ class _TelaConfigState extends State<TelaConfig>
         const SizedBox(height: 14),
         _glassCard(children: [
           Text(_sobreDescricaoApp,
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.figtree(
                   color: Colors.white70, fontSize: 15, height: 1.6)),
         ]),
         const SizedBox(height: 24),
@@ -661,13 +661,13 @@ class _TelaConfigState extends State<TelaConfig>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(_sobreCriadorNome,
-                        style: GoogleFonts.poppins(
+                        style: GoogleFonts.figtree(
                             color: Colors.white,
                             fontSize: 18,
                             fontWeight: FontWeight.w700)),
                     const SizedBox(height: 8),
                     Text(_sobreDescricaoCriador,
-                        style: GoogleFonts.poppins(
+                        style: GoogleFonts.figtree(
                             color: Colors.white70, fontSize: 14, height: 1.5)),
                   ],
                 ),
@@ -697,7 +697,7 @@ class _TelaConfigState extends State<TelaConfig>
                       color: _accent, size: 20),
                   const SizedBox(width: 10),
                   Text(_sobreLabelCanal,
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.figtree(
                           color: _accent,
                           fontSize: 15,
                           fontWeight: FontWeight.w700)),
@@ -710,7 +710,7 @@ class _TelaConfigState extends State<TelaConfig>
         Center(
           child: Text(
             'Feito com 💙 para deixar seu tablet mais inteligente.',
-            style: GoogleFonts.poppins(color: Colors.white24, fontSize: 13),
+            style: GoogleFonts.figtree(color: Colors.white24, fontSize: 13),
           ),
         ),
         const SizedBox(height: 12),
@@ -754,7 +754,7 @@ class _TelaConfigState extends State<TelaConfig>
             _totalFotos == null
                 ? 'Contando fotos...'
                 : '$_totalFotos foto(s) nas Memórias',
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.figtree(
                 color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 12),
@@ -782,7 +782,7 @@ class _TelaConfigState extends State<TelaConfig>
                         color: _accent, size: 20),
                   const SizedBox(width: 10),
                   Text('Adicionar fotos',
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.figtree(
                           color: _accent,
                           fontSize: 15,
                           fontWeight: FontWeight.w700)),
@@ -793,7 +793,7 @@ class _TelaConfigState extends State<TelaConfig>
           if (_fotosAdicionadas != null) ...[
             const SizedBox(height: 8),
             Text('$_fotosAdicionadas foto(s) adicionada(s).',
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.figtree(
                     color: Colors.greenAccent, fontSize: 13)),
           ],
           const SizedBox(height: 6),
@@ -801,7 +801,7 @@ class _TelaConfigState extends State<TelaConfig>
             'As fotos são copiadas para dentro do app (não precisa de '
             'permissão de armazenamento) e entram no slideshow das Memórias '
             'e na "Recordação do dia" da tela Bom Dia.',
-            style: GoogleFonts.poppins(color: Colors.white54, fontSize: 12),
+            style: GoogleFonts.figtree(color: Colors.white54, fontSize: 12),
           ),
         ]),
         const SizedBox(height: 20),
@@ -876,13 +876,13 @@ class _TelaConfigState extends State<TelaConfig>
         const SizedBox(height: 16),
         _glassCard(children: [
           Text('Dados guardados',
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.figtree(
                   color: Colors.white70, fontSize: 15, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           Text(
             'O app guarda clima, notícias e jogos para mostrar algo mesmo sem '
             'internet. Use o botão abaixo se algum dado parecer travado.',
-            style: GoogleFonts.poppins(color: Colors.white54, fontSize: 12),
+            style: GoogleFonts.figtree(color: Colors.white54, fontSize: 12),
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
@@ -893,7 +893,7 @@ class _TelaConfigState extends State<TelaConfig>
             },
             icon: const Icon(Icons.refresh_rounded, color: _accent),
             label: Text('Forçar atualização de todos os dados',
-                style: GoogleFonts.poppins(color: _accent)),
+                style: GoogleFonts.figtree(color: _accent)),
           ),
         ]),
         const SizedBox(height: 24),
@@ -948,7 +948,7 @@ class _TelaConfigState extends State<TelaConfig>
                       color: Colors.white24, size: 20),
                   const SizedBox(width: 14),
                   Text(nomeTelas[telaId] ?? telaId,
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.figtree(
                           color: estaAtiva ? Colors.white70 : Colors.white24,
                           fontSize: 16,
                           decoration: estaAtiva
@@ -999,7 +999,7 @@ class _TelaConfigState extends State<TelaConfig>
                   color: sel ? _accent : Colors.white54),
               const SizedBox(width: 8),
               Text(op['label'] as String,
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.figtree(
                       color: sel ? _accent : Colors.white60))
             ]),
           ),
@@ -1031,7 +1031,7 @@ class _TelaConfigState extends State<TelaConfig>
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: sel ? _accent : _border)),
                 child: Text(e.value.nome,
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.figtree(
                         color: sel ? _accent : Colors.white60)),
               ),
             );
@@ -1075,7 +1075,7 @@ class _TelaConfigState extends State<TelaConfig>
             const Icon(Icons.location_on_rounded, color: _accent, size: 16),
             const SizedBox(width: 8),
             Text('Localização',
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.figtree(
                     color: Colors.white70,
                     fontSize: 15,
                     fontWeight: FontWeight.w600)),
@@ -1096,7 +1096,7 @@ class _TelaConfigState extends State<TelaConfig>
                   Expanded(
                     child: Text(
                       '$cidadeAtual • $ufAtual',
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.figtree(
                         color: Colors.white,
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
@@ -1119,13 +1119,13 @@ class _TelaConfigState extends State<TelaConfig>
             const SizedBox(height: 8),
             Text(_erroLocalizacao!,
                 style:
-                    GoogleFonts.poppins(color: Colors.redAccent, fontSize: 13)),
+                    GoogleFonts.figtree(color: Colors.redAccent, fontSize: 13)),
           ],
           const SizedBox(height: 6),
           Text(
             'Toque para escolher Estado e Cidade — a previsão e o mapa '
             'são atualizados automaticamente.',
-            style: GoogleFonts.poppins(color: Colors.white54, fontSize: 12),
+            style: GoogleFonts.figtree(color: Colors.white54, fontSize: 12),
           ),
           const SizedBox(height: 20),
           _sliderInt('clima', 'duracao_seg', 'Tempo na tela',
@@ -1163,7 +1163,7 @@ class _TelaConfigState extends State<TelaConfig>
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: sel ? _accent : _border)),
                 child: Text(e.value.nome,
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.figtree(
                         color: sel ? _accent : Colors.white70)),
               ),
             );
@@ -1221,7 +1221,7 @@ class _TelaConfigState extends State<TelaConfig>
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: sel ? _accent : _border)),
                 child: Text(e.value.nome,
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.figtree(
                         color: sel ? _accent : Colors.white60)),
               ),
             );
@@ -1270,12 +1270,12 @@ class _TelaConfigState extends State<TelaConfig>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(conta != null ? 'Conta Google conectada' : 'Conta Google não conectada',
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.figtree(
                           color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
                   Text(
                       conta?.email ??
                           'Necessária para Calendário (Google Agenda) e Lista de Compras (Google Tasks).',
-                      style: GoogleFonts.poppins(color: Colors.white60, fontSize: 13)),
+                      style: GoogleFonts.figtree(color: Colors.white60, fontSize: 13)),
                 ],
               ),
             ),
@@ -1296,7 +1296,7 @@ class _TelaConfigState extends State<TelaConfig>
               icon: Icon(conta != null ? Icons.logout_rounded : Icons.login_rounded,
                   color: _accent),
               label: Text(conta != null ? 'Desconectar' : 'Conectar conta Google',
-                  style: GoogleFonts.poppins(color: _accent, fontWeight: FontWeight.w700)),
+                  style: GoogleFonts.figtree(color: _accent, fontWeight: FontWeight.w700)),
             ),
           ),
         ]);
@@ -1335,7 +1335,7 @@ class _TelaConfigState extends State<TelaConfig>
             'A tela usa a lista do Google Tasks chamada "Compras" (ou '
             '"Mercado", "Supermercado", "Feira"). Tocar num item marca como '
             'comprado — com 5 segundos para desfazer.',
-            style: GoogleFonts.poppins(color: Colors.white60, fontSize: 13),
+            style: GoogleFonts.figtree(color: Colors.white60, fontSize: 13),
           ),
           const SizedBox(height: 16),
           _sliderInt('compras', 'duracao_seg', 'Tempo na tela',
@@ -1364,6 +1364,14 @@ class _TelaConfigState extends State<TelaConfig>
                 'lidos da programação pública do futebolnatv.com.br)',
             categoria: 'proxima_partida',
             chave: 'mostrar_canais',
+            valorPadrao: true,
+          ),
+          _toggleConfig(
+            titulo: 'Avisar gols em voz alta',
+            subtitulo:
+                'No dia do jogo o painel acompanha o placar; a cada gol, mostra a partida e fala o placar',
+            categoria: 'proxima_partida',
+            chave: 'falar_gols',
             valorPadrao: true,
           ),
           const SizedBox(height: 16),
@@ -1412,7 +1420,7 @@ class _TelaConfigState extends State<TelaConfig>
           'De madrugada o painel troca o rodízio por um relógio grande e '
           'escuro, e reduz o brilho da tela. Tocar na tela acorda o painel '
           'por 10 minutos.',
-          style: GoogleFonts.poppins(color: Colors.white54, fontSize: 13),
+          style: GoogleFonts.figtree(color: Colors.white54, fontSize: 13),
         ),
         const SizedBox(height: 16),
         _glassCard(children: [
@@ -1427,7 +1435,7 @@ class _TelaConfigState extends State<TelaConfig>
           Row(children: [
             Expanded(
                 child: Text('Começa às',
-                    style: GoogleFonts.poppins(color: Colors.white70, fontSize: 15))),
+                    style: GoogleFonts.figtree(color: Colors.white70, fontSize: 15))),
             _horaPicker(
                 valor: inicio,
                 min: 0,
@@ -1438,7 +1446,7 @@ class _TelaConfigState extends State<TelaConfig>
           Row(children: [
             Expanded(
                 child: Text('Termina às',
-                    style: GoogleFonts.poppins(color: Colors.white70, fontSize: 15))),
+                    style: GoogleFonts.figtree(color: Colors.white70, fontSize: 15))),
             _horaPicker(
                 valor: fim,
                 min: 0,
@@ -1508,7 +1516,7 @@ class _TelaConfigState extends State<TelaConfig>
           border: Border.all(color: sel ? _accent : _border),
         ),
         child: Text(label,
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.figtree(
                 color: sel ? _accent : Colors.white60,
                 fontWeight: sel ? FontWeight.w700 : FontWeight.w500)),
       ),
@@ -1538,7 +1546,7 @@ class _TelaConfigState extends State<TelaConfig>
                     color: Color(0xFF1DB954), size: 18),
                 const SizedBox(width: 10),
                 Text('Como configurar',
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.figtree(
                         color: const Color(0xFF1DB954),
                         fontSize: 16,
                         fontWeight: FontWeight.w700)),
@@ -1581,7 +1589,7 @@ class _TelaConfigState extends State<TelaConfig>
           const SizedBox(height: 4),
           Text(
             '⚠️  Digite exatamente: https://localhost:8888/callback\nCom "https://" (com o s) — e cadastre igual no Spotify Dashboard',
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.figtree(
                 color: Colors.white54, fontSize: 13, height: 1.5),
           ),
         ]),
@@ -1686,13 +1694,13 @@ class _TelaConfigState extends State<TelaConfig>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(tituloStatus,
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.figtree(
                           color: corStatus,
                           fontSize: 16,
                           fontWeight: FontWeight.w700)),
                   const SizedBox(height: 3),
                   Text(subtituloStatus,
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.figtree(
                           color: Colors.white60, fontSize: 13),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis),
@@ -1753,7 +1761,7 @@ class _TelaConfigState extends State<TelaConfig>
                       color: Colors.black, size: 20),
                   const SizedBox(width: 10),
                   Text('CONECTAR AO SPOTIFY',
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.figtree(
                           color: Colors.black,
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
@@ -1784,7 +1792,7 @@ class _TelaConfigState extends State<TelaConfig>
                       color: Colors.redAccent, size: 20),
                   const SizedBox(width: 10),
                   Text('DESLOGAR DO SPOTIFY',
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.figtree(
                           color: Colors.redAccent,
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -1815,13 +1823,13 @@ class _TelaConfigState extends State<TelaConfig>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(titulo,
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.figtree(
                       color: Colors.white70,
                       fontSize: 15,
                       fontWeight: FontWeight.w600)),
               const SizedBox(height: 3),
               Text(subtitulo,
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.figtree(
                       color: Colors.white54, fontSize: 12, height: 1.4)),
             ],
           ),
@@ -1863,7 +1871,7 @@ class _TelaConfigState extends State<TelaConfig>
         ),
         Expanded(
           child: Text(texto,
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.figtree(
                   color: Colors.white70, fontSize: 14, height: 1.4)),
         ),
       ]),
@@ -1886,7 +1894,7 @@ class _TelaConfigState extends State<TelaConfig>
             Icon(icone, color: _accent, size: 16),
             const SizedBox(width: 8),
             Text(label,
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.figtree(
                     color: Colors.white70,
                     fontSize: 15,
                     fontWeight: FontWeight.w600)),
@@ -1898,11 +1906,11 @@ class _TelaConfigState extends State<TelaConfig>
             // redesenho (vazava memória e o cursor pulava).
             key: ValueKey('campo_${categoria}_$chave'),
             initialValue: config.getString(categoria, chave, ''),
-            style: GoogleFonts.poppins(color: Colors.white, fontSize: 16),
+            style: GoogleFonts.figtree(color: Colors.white, fontSize: 16),
             decoration: InputDecoration(
               hintText: hint,
               hintStyle:
-                  GoogleFonts.poppins(color: Colors.white24, fontSize: 14),
+                  GoogleFonts.figtree(color: Colors.white24, fontSize: 14),
               filled: true,
               fillColor: Colors.white.withValues(alpha: 0.06),
               border: OutlineInputBorder(
@@ -1934,7 +1942,7 @@ class _TelaConfigState extends State<TelaConfig>
       Container(width: 3, height: 20, color: _accent),
       const SizedBox(width: 12),
       Text(title,
-          style: GoogleFonts.poppins(
+          style: GoogleFonts.figtree(
               color: Colors.white, fontSize: 19, fontWeight: FontWeight.w700)),
     ]);
   }
@@ -1976,7 +1984,7 @@ class _TelaConfigState extends State<TelaConfig>
                   'app funcional e bonito, só mais leve.\n\n'
                   'Em tablets modernos e potentes, deixe desligado para '
                   'aproveitar o visual completo.',
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.figtree(
                       color: Colors.white70, fontSize: 14, height: 1.5),
                 ),
               ),
@@ -2011,7 +2019,7 @@ class _TelaConfigState extends State<TelaConfig>
                             perf.modoEconomico
                                 ? 'Modo Econômico (tablet fraco)'
                                 : 'Visual completo (tablet top)',
-                            style: GoogleFonts.poppins(
+                            style: GoogleFonts.figtree(
                               color: Colors.white,
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -2087,7 +2095,7 @@ class _TelaConfigState extends State<TelaConfig>
                           upd.versaoInstalada.isNotEmpty
                               ? 'Versão instalada: ${upd.versaoInstalada}'
                               : 'Verificando versão instalada...',
-                          style: GoogleFonts.poppins(
+                          style: GoogleFonts.figtree(
                               color: Colors.white,
                               fontSize: 16,
                               fontWeight: FontWeight.w700),
@@ -2099,7 +2107,7 @@ class _TelaConfigState extends State<TelaConfig>
                               : upd.ultimaVerificacao != null
                                   ? 'Você está com a versão mais recente'
                                   : 'Ainda não verificado nesta sessão',
-                          style: GoogleFonts.poppins(
+                          style: GoogleFonts.figtree(
                             color: upd.disponivel
                                 ? const Color(0xFF00D4FF)
                                 : Colors.white60,
@@ -2117,7 +2125,7 @@ class _TelaConfigState extends State<TelaConfig>
                 Text(
                   'Última verificação: ${_formatarHorario(upd.ultimaVerificacao!)}',
                   style:
-                      GoogleFonts.poppins(color: Colors.white54, fontSize: 12),
+                      GoogleFonts.figtree(color: Colors.white54, fontSize: 12),
                 ),
               ],
             ]),
@@ -2132,7 +2140,7 @@ class _TelaConfigState extends State<TelaConfig>
                         color: Colors.white60, size: 16),
                     const SizedBox(width: 8),
                     Text('Novidades da versão ${upd.info!.versao}',
-                        style: GoogleFonts.poppins(
+                        style: GoogleFonts.figtree(
                             color: Colors.white70,
                             fontSize: 14,
                             fontWeight: FontWeight.w600)),
@@ -2141,7 +2149,7 @@ class _TelaConfigState extends State<TelaConfig>
                 const SizedBox(height: 10),
                 Text(
                   upd.info!.changelog,
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.figtree(
                       color: Colors.white60, fontSize: 14, height: 1.5),
                 ),
               ]),
@@ -2192,7 +2200,7 @@ class _TelaConfigState extends State<TelaConfig>
                                 color: Color(0xFF00D4FF), size: 20),
                             const SizedBox(width: 10),
                             Text('Verificar agora',
-                                style: GoogleFonts.poppins(
+                                style: GoogleFonts.figtree(
                                     color: const Color(0xFF00D4FF),
                                     fontSize: 15,
                                     fontWeight: FontWeight.w700)),
@@ -2210,7 +2218,7 @@ class _TelaConfigState extends State<TelaConfig>
               Text(
                 'De quanto em quanto tempo o app verifica sozinho se tem '
                 'versão nova, sem precisar fechar e abrir.',
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.figtree(
                     color: Colors.white60, fontSize: 13, height: 1.4),
               ),
               const SizedBox(height: 14),
@@ -2251,7 +2259,7 @@ class _TelaConfigState extends State<TelaConfig>
                         const SizedBox(width: 12),
                         Text(
                           opcao['label'] as String,
-                          style: GoogleFonts.poppins(
+                          style: GoogleFonts.figtree(
                             color: sel ? Colors.white : Colors.white70,
                             fontSize: 15,
                             fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
@@ -2282,9 +2290,9 @@ class _TelaConfigState extends State<TelaConfig>
       children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Flexible(
-              child: Text(label, style: GoogleFonts.poppins(color: Colors.white70))),
+              child: Text(label, style: GoogleFonts.figtree(color: Colors.white70))),
           Text('${valor.clamp(min, max)} $unidade',
-              style: GoogleFonts.poppins(color: _accent)),
+              style: GoogleFonts.figtree(color: _accent)),
         ]),
         Slider(
             // clamp: valores antigos salvos fora da faixa travavam o Slider.
@@ -2432,7 +2440,7 @@ class _TelaConfigState extends State<TelaConfig>
                             ),
                             child: Text(
                               e.key,
-                              style: GoogleFonts.poppins(
+                              style: GoogleFonts.figtree(
                                 color: sel ? _accent : Colors.white70,
                                 fontWeight: FontWeight.w700,
                                 fontSize: 16,
@@ -2447,7 +2455,7 @@ class _TelaConfigState extends State<TelaConfig>
                   TextButton(
                     onPressed: () => Navigator.pop(ctx, null),
                     child: Text('Cancelar',
-                        style: GoogleFonts.poppins(color: Colors.white60)),
+                        style: GoogleFonts.figtree(color: Colors.white60)),
                   ),
                 ],
               ),
@@ -2511,10 +2519,10 @@ class _TelaConfigState extends State<TelaConfig>
                     const SizedBox(height: 16),
                     if (municipios != null)
                       TextField(
-                        style: GoogleFonts.poppins(color: Colors.white),
+                        style: GoogleFonts.figtree(color: Colors.white),
                         decoration: InputDecoration(
                           hintText: 'Buscar cidade...',
-                          hintStyle: GoogleFonts.poppins(color: Colors.white54),
+                          hintStyle: GoogleFonts.figtree(color: Colors.white54),
                           prefixIcon:
                               const Icon(Icons.search, color: Colors.white54),
                           filled: true,
@@ -2531,7 +2539,7 @@ class _TelaConfigState extends State<TelaConfig>
                       child: erro != null
                           ? Center(
                               child: Text(erro!,
-                                  style: GoogleFonts.poppins(
+                                  style: GoogleFonts.figtree(
                                       color: Colors.white60)))
                           : municipios == null
                               ? const Center(child: CircularProgressIndicator())
@@ -2541,7 +2549,7 @@ class _TelaConfigState extends State<TelaConfig>
                                     final nome = filtrados[i];
                                     return ListTile(
                                       title: Text(nome,
-                                          style: GoogleFonts.poppins(
+                                          style: GoogleFonts.figtree(
                                               color: Colors.white70)),
                                       onTap: () => Navigator.pop(ctx, nome),
                                     );
@@ -2552,7 +2560,7 @@ class _TelaConfigState extends State<TelaConfig>
                     TextButton(
                       onPressed: () => Navigator.pop(ctx, null),
                       child: Text('Cancelar',
-                          style: GoogleFonts.poppins(color: Colors.white60)),
+                          style: GoogleFonts.figtree(color: Colors.white60)),
                     ),
                   ],
                 ),
@@ -2579,7 +2587,7 @@ class _TelaConfigState extends State<TelaConfig>
           const Icon(Icons.update_rounded, color: _accent, size: 16),
           const SizedBox(width: 8),
           Text('Atualizar dados a cada',
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.figtree(
                   color: Colors.white70,
                   fontSize: 15,
                   fontWeight: FontWeight.w600)),
@@ -2606,7 +2614,7 @@ class _TelaConfigState extends State<TelaConfig>
                 ),
                 child: Text(
                   o['label'] as String,
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.figtree(
                     color: sel ? _accent : Colors.white70,
                     fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
                   ),
@@ -2666,7 +2674,7 @@ class _TelaConfigState extends State<TelaConfig>
         _sectionTitle('👤 Nome na Saudação'),
         const SizedBox(height: 6),
         Text('Quem vai receber o bom dia?',
-            style: GoogleFonts.poppins(color: Colors.white54, fontSize: 13)),
+            style: GoogleFonts.figtree(color: Colors.white54, fontSize: 13)),
         const SizedBox(height: 14),
         _glassCard(children: [
           _textFieldConfig(
@@ -2679,7 +2687,7 @@ class _TelaConfigState extends State<TelaConfig>
           const SizedBox(height: 4),
           Text(
               'Aparece como: "Bom dia ${config.getString('geral', 'nome_usuario', 'Gabriel')},"',
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.figtree(
                   color: _accent.withValues(alpha: 0.7),
                   fontSize: 13,
                   fontStyle: FontStyle.italic)),
@@ -2691,7 +2699,7 @@ class _TelaConfigState extends State<TelaConfig>
         _sectionTitle('⏰ Horário de Exibição'),
         const SizedBox(height: 6),
         Text('Fora deste intervalo a tela é ignorada completamente.',
-            style: GoogleFonts.poppins(color: Colors.white54, fontSize: 13)),
+            style: GoogleFonts.figtree(color: Colors.white54, fontSize: 13)),
         const SizedBox(height: 14),
         _glassCard(children: [
           // Início
@@ -2713,12 +2721,12 @@ class _TelaConfigState extends State<TelaConfig>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Início',
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.figtree(
                         color: Colors.white70,
                         fontSize: 15,
                         fontWeight: FontWeight.w700)),
                 Text('A partir de qual hora a tela pode aparecer',
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.figtree(
                         color: Colors.white54, fontSize: 12)),
               ],
             )),
@@ -2753,12 +2761,12 @@ class _TelaConfigState extends State<TelaConfig>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Fim',
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.figtree(
                         color: Colors.white70,
                         fontSize: 15,
                         fontWeight: FontWeight.w700)),
                 Text('Até qual hora a tela ainda pode aparecer',
-                    style: GoogleFonts.poppins(
+                    style: GoogleFonts.figtree(
                         color: Colors.white54, fontSize: 12)),
               ],
             )),
@@ -2788,7 +2796,7 @@ class _TelaConfigState extends State<TelaConfig>
                 'Ativa das ${horaInicio.toString().padLeft(2, '0')}:00'
                 ' até ${horaFim.toString().padLeft(2, '0')}:00'
                 '  •  ${horaFim - horaInicio}h de exibição',
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.figtree(
                     color: _accent,
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
@@ -2813,7 +2821,7 @@ class _TelaConfigState extends State<TelaConfig>
               300,
               unidade: 's'),
           Text('Usado quando você ainda tem tempo para absorver tudo',
-              style: GoogleFonts.poppins(color: Colors.white30, fontSize: 12)),
+              style: GoogleFonts.figtree(color: Colors.white30, fontSize: 12)),
           const SizedBox(height: 16),
           _sliderInt(
               'bom_dia',
@@ -2824,7 +2832,7 @@ class _TelaConfigState extends State<TelaConfig>
               120,
               unidade: 's'),
           Text('Passagem rápida antes de sair para o trabalho',
-              style: GoogleFonts.poppins(color: Colors.white30, fontSize: 12)),
+              style: GoogleFonts.figtree(color: Colors.white30, fontSize: 12)),
         ]),
 
         const SizedBox(height: 28),
@@ -2833,14 +2841,14 @@ class _TelaConfigState extends State<TelaConfig>
         _sectionTitle('🔤 Fonte'),
         const SizedBox(height: 6),
         Text('Afeta o nome, temperatura e todas as informações da tela.',
-            style: GoogleFonts.poppins(color: Colors.white54, fontSize: 13)),
+            style: GoogleFonts.figtree(color: Colors.white54, fontSize: 13)),
         const SizedBox(height: 14),
         ...fontesDisponiveis2.map((f) {
           final sel = fonteAtual == f['key'];
           TextStyle sample(String fk) {
             switch (fk) {
               case 'rajdhani':
-                return GoogleFonts.poppins(
+                return GoogleFonts.rajdhani(
                     color: sel ? _accent : Colors.white60,
                     fontSize: 18,
                     fontWeight: FontWeight.w700);
@@ -2890,7 +2898,7 @@ class _TelaConfigState extends State<TelaConfig>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(f['label']!,
-                            style: GoogleFonts.poppins(
+                            style: GoogleFonts.figtree(
                                 color: sel ? _accent : Colors.white70,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
@@ -2918,13 +2926,13 @@ class _TelaConfigState extends State<TelaConfig>
               tamanhoNome, 28.0, 64.0,
               unidade: 'px'),
           Text('"Bom dia Gabriel" — quanto maior, mais impacto',
-              style: GoogleFonts.poppins(color: Colors.white30, fontSize: 12)),
+              style: GoogleFonts.figtree(color: Colors.white30, fontSize: 12)),
           const SizedBox(height: 16),
           _sliderDouble('bom_dia', 'tamanho_temp', 'Tamanho da temperatura',
               tamanhoTemp, 56.0, 120.0,
               unidade: 'px'),
           Text('O número enorme de graus no centro da tela',
-              style: GoogleFonts.poppins(color: Colors.white30, fontSize: 12)),
+              style: GoogleFonts.figtree(color: Colors.white30, fontSize: 12)),
         ]),
 
         const SizedBox(height: 28),
@@ -2933,7 +2941,7 @@ class _TelaConfigState extends State<TelaConfig>
         _sectionTitle('🎨 Cor de Destaque'),
         const SizedBox(height: 6),
         Text('Cor usada no seu nome e nos destaques da tela.',
-            style: GoogleFonts.poppins(color: Colors.white54, fontSize: 13)),
+            style: GoogleFonts.figtree(color: Colors.white54, fontSize: 13)),
         const SizedBox(height: 14),
         Wrap(
           spacing: 10,
@@ -2982,7 +2990,7 @@ class _TelaConfigState extends State<TelaConfig>
                   ),
                   const SizedBox(width: 8),
                   Text(cor['label'] as String,
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.figtree(
                         color: sel ? preview : Colors.white60,
                         fontSize: 13,
                         fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
@@ -3038,6 +3046,15 @@ class _TelaConfigState extends State<TelaConfig>
             chave: 'mostrar_chuva',
             valorPadrao: true,
           ),
+          const Divider(color: Colors.white10, height: 24),
+          _toggleConfig(
+            titulo: 'Ler o resumo do dia em voz alta',
+            subtitulo:
+                'Uma vez por manhã, na primeira vez que a tela Bom Dia aparece',
+            categoria: 'bom_dia',
+            chave: 'falar_resumo',
+            valorPadrao: false,
+          ),
         ]),
 
         const SizedBox(height: 28),
@@ -3060,7 +3077,7 @@ class _TelaConfigState extends State<TelaConfig>
               const Text('🌅', style: TextStyle(fontSize: 20)),
               const SizedBox(width: 10),
               Text('Resumo da configuração',
-                  style: GoogleFonts.poppins(
+                  style: GoogleFonts.figtree(
                       color: const Color(0xFFFFCC00),
                       fontSize: 16,
                       fontWeight: FontWeight.w700)),
@@ -3115,7 +3132,7 @@ class _TelaConfigState extends State<TelaConfig>
         alignment: Alignment.center,
         child: Text(
           '${valor.toString().padLeft(2, '0')}h',
-          style: GoogleFonts.orbitron(
+          style: GoogleFonts.bricolageGrotesque(
               color: _accent, fontSize: 18, fontWeight: FontWeight.w700),
         ),
       ),
@@ -3147,9 +3164,9 @@ class _TelaConfigState extends State<TelaConfig>
       {String unidade = ''}) {
     return Column(children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text(label, style: GoogleFonts.poppins(color: Colors.white70)),
+        Text(label, style: GoogleFonts.figtree(color: Colors.white70)),
         Text('${valor.round()} $unidade',
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.figtree(
                 color: _accent, fontWeight: FontWeight.w700)),
       ]),
       Slider(
@@ -3172,12 +3189,12 @@ class _TelaConfigState extends State<TelaConfig>
         SizedBox(
           width: 80,
           child: Text(label,
-              style: GoogleFonts.poppins(color: Colors.white54, fontSize: 13)),
+              style: GoogleFonts.figtree(color: Colors.white54, fontSize: 13)),
         ),
         Expanded(
           child: Text(
             valor.isEmpty ? '—' : valor,
-            style: GoogleFonts.poppins(
+            style: GoogleFonts.figtree(
                 color: Colors.white70,
                 fontSize: 13,
                 fontWeight: FontWeight.w600),
@@ -3192,7 +3209,7 @@ class _TelaConfigState extends State<TelaConfig>
       SnackBar(
         content: Text(
           msg,
-          style: GoogleFonts.poppins(
+          style: GoogleFonts.figtree(
             color: Colors.white,
             fontSize: 15,
             fontWeight: FontWeight.w700,

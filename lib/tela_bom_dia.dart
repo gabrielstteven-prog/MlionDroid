@@ -7,12 +7,16 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'cache_manager.dart';
 import 'config_manager.dart';
+import 'design/tema.dart';
 import 'info_hub.dart';
 import 'performance_manager.dart';
 import 'responsive.dart';
+import 'sistema.dart';
 import 'services/fotos_service.dart';
 import 'services/news_service.dart';
+import 'services/resumo_service.dart';
 import 'services/weather_service.dart';
 import 'util.dart';
 
@@ -52,12 +56,8 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
   // ── Controllers ───────────────────────────────────────────────────────────
   late AnimationController _bgCtrl; // fundo animado infinito
   late AnimationController _entradaCtrl; // fade-in de entrada
-  late AnimationController _iconCtrl; // oscilação do ícone de clima
-  late AnimationController _pulseCtrl; // pulse no nome
   late AnimationController _floatCtrl; // partículas flutuantes
   late Animation<double> _entradaAnim;
-  late Animation<double> _iconFloat;
-  late Animation<double> _pulseAnim;
 
   final List<_Particula> _particulas = [];
 
@@ -126,15 +126,6 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
   _ClimaTheme get _climaTheme =>
       _ClimaTheme.fromCode(_weatherCode, _probChuva, ehDia: _ehDia);
 
-  // ── Data e hora ───────────────────────────────────────────────────────────
-  static const _mesesAbrev = [
-    'JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN',
-    'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ',
-  ];
-
-  String _dataNumerica(DateTime agora) =>
-      '${doisDigitos(agora.day)} ${_mesesAbrev[agora.month - 1]}';
-
   @override
   void initState() {
     super.initState();
@@ -143,10 +134,6 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
         AnimationController(vsync: this, duration: const Duration(seconds: 12));
     _entradaCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 1400));
-    _iconCtrl =
-        AnimationController(vsync: this, duration: const Duration(seconds: 3));
-    _pulseCtrl =
-        AnimationController(vsync: this, duration: const Duration(seconds: 2));
     _floatCtrl =
         AnimationController(vsync: this, duration: const Duration(seconds: 18));
 
@@ -154,17 +141,11 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
     // visual completo.
     if (PerformanceManager.instance.animacoesDecorativasAtivas) {
       _bgCtrl.repeat(reverse: true);
-      _iconCtrl.repeat(reverse: true);
-      _pulseCtrl.repeat(reverse: true);
       _floatCtrl.repeat();
     }
 
     _entradaAnim =
         CurvedAnimation(parent: _entradaCtrl, curve: Curves.easeOutCubic);
-    _iconFloat = Tween<double>(begin: -8.0, end: 8.0)
-        .animate(CurvedAnimation(parent: _iconCtrl, curve: Curves.easeInOut));
-    _pulseAnim = Tween<double>(begin: 1.0, end: 1.03)
-        .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
 
     final rng = math.Random();
     for (int i = 0; i < 30; i++) {
@@ -189,8 +170,6 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
   void dispose() {
     _bgCtrl.dispose();
     _entradaCtrl.dispose();
-    _iconCtrl.dispose();
-    _pulseCtrl.dispose();
     _floatCtrl.dispose();
     _saidaTimer?.cancel();
     _antiTravamento?.cancel();
@@ -203,9 +182,25 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
       _buscarNoticia(),
       FotosService.instance.fotoDoDia().then((f) => _fotoDoDia = f),
     ]);
+    _resumo = await ResumoService.instance.montar();
     if (!mounted) return;
     setState(() => _carregando = false);
     _iniciarSaida();
+    _falarResumoSeConfigurado();
+  }
+
+  List<ItemResumo> _resumo = [];
+
+  /// Lê o resumo em voz alta uma vez por manhã (opcional, nas Configurações).
+  Future<void> _falarResumoSeConfigurado() async {
+    if (!_cfg.getBool('bom_dia', 'falar_resumo', false) || _resumo.isEmpty) return;
+    final hoje = DateTime.now();
+    final chave = 'bom_dia_falado_${hoje.year}_${hoje.month}_${hoje.day}';
+    if (await CacheManager.instance.obterEntrada<bool>(chave) != null) return;
+    await CacheManager.instance.salvar(chave, true);
+    final nome = _nomeUsuario;
+    await Sistema.falar(ResumoService.instance
+        .paraFalar(nome.isEmpty ? _saudacao : '$_saudacao, $nome', _resumo));
   }
 
   Future<void> _buscarNoticia() async {
@@ -326,602 +321,190 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildCarregando(R r, _ClimaTheme theme) {
-    return Center(
-      child: AnimatedBuilder(
-        animation: _pulseCtrl,
-        builder: (_, __) => Opacity(
-          opacity: 0.5 + _pulseCtrl.value * 0.5,
-          child: Text(theme.emoji, style: TextStyle(fontSize: r.fs(72))),
-        ),
-      ),
-    );
-  }
+  Widget _buildCarregando(R r, _ClimaTheme theme) =>
+      const Carregando(cor: Destaques.bomDia);
 
-  // ── Layout principal — proporcional à altura real disponível ─────────────
+  // ── Layout ────────────────────────────────────────────────────────────────
+  //  ┌─────────────────────────────────────┬──────────────────┐
+  //  │ Bom dia, Gabriel                     │                  │
+  //  │ sábado, 3 de outubro · 06:42         │   foto do dia    │
+  //  │ ☀ 22°   hoje 16° a 28°               │                  │
+  //  ├─────────────────────────────────────┴──────────────────┤
+  //  │ Seu dia (frases)                     │ notícia          │
+  //  │ frase do dia                                            │
+  //  └─────────────────────────────────────────────────────────┘
   Widget _buildConteudo(R r, _ClimaTheme theme, BoxConstraints constraints) {
-    final sw = constraints.maxWidth;
-    final sh = constraints.maxHeight;
+    final t = Tipo(r);
     final temFoto = _mostrarFoto && _fotoDoDia != null;
-
     return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: sw * 0.04,
-        vertical: sh * 0.02,
-      ),
+      padding: EdgeInsets.fromLTRB(r.sp(40), r.sp(28), r.sp(40), r.sp(24)),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ── 1. Topo: Data (esq) | Saudação (centro) | Relógio (dir) ────
-          _buildTopoInfo(r, theme, sh, sw),
-
-          SizedBox(height: sh * 0.015),
-
-          // ── 2. Linha principal: Clima | Foto do Dia ─────────────────────
           Expanded(
-            flex: 52,
+            flex: 11,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  flex: temFoto ? 56 : 100,
-                  child: _buildClimaDestaque(r, theme, sh),
-                ),
+                Expanded(flex: 3, child: _buildAbertura(r, theme)),
                 if (temFoto) ...[
-                  SizedBox(width: sw * 0.025),
-                  Expanded(flex: 44, child: _buildFotoDoDiaCard(r, theme)),
+                  SizedBox(width: r.sp(32)),
+                  Expanded(flex: 2, child: _buildFotoDoDiaCard(r, theme)),
                 ],
               ],
             ),
           ),
-
-          SizedBox(height: sh * 0.018),
-
-          // ── 3. Notícia do dia (largura total, com imagem) ──────────────
-          if (_mostrarNoticia)
-            Expanded(
-              flex: 34,
-              child: _buildNoticiaCard(r, theme),
+          SizedBox(height: r.sp(24)),
+          Expanded(
+            flex: 9,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(flex: 3, child: _buildSeuDia(r)),
+                if (_mostrarNoticia) ...[
+                  SizedBox(width: r.sp(32)),
+                  Expanded(flex: 2, child: _buildNoticiaCard(r, theme)),
+                ],
+              ],
             ),
-
-          // ── 4. Frase do dia — rodapé discreto, sempre visível ──────────
+          ),
           if (_mostrarFrase) ...[
-            SizedBox(height: sh * 0.012),
-            _buildFraseRodape(r, theme, sw),
+            SizedBox(height: r.sp(14)),
+            Text(_frase,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: t.apoio().copyWith(fontStyle: FontStyle.italic)),
           ],
         ],
       ),
     );
   }
 
-  // ── Topo: Data | Saudação | Relógio ───────────────────────────────────────
-  // Saudação fica no centro como protagonista (maior, com pulse e glow).
-  // Data e relógio são elementos de apoio, menores e discretos, um em cada
-  // canto — dão a informação sem competir visualmente com o "Bom dia, nome".
-  Widget _buildTopoInfo(R r, _ClimaTheme theme, double sh, double sw) {
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            flex: 27,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: _buildDataCard(r, theme, sh),
-            ),
-          ),
-          Expanded(
-            flex: 46,
-            child: Center(child: _buildSaudacao(r, theme, sh)),
-          ),
-          Expanded(
-            flex: 27,
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: _buildRelogioCard(r, theme, sh),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Card de data — canto esquerdo: dia/mês/ano + dia da semana por extenso
-  Widget _buildDataCard(R r, _ClimaTheme theme, double sh) {
-    final fsData = math.min(r.fs(20), sh * 0.040);
-    final fsAno = fsData * 0.55;
-    final fsSemana = math.min(r.fs(12), sh * 0.024);
-
-    return ValueListenableBuilder<DateTime>(
-      valueListenable: InfoHub.instance.relogio,
-      builder: (context, agora, _) => Container(
-      padding: EdgeInsets.symmetric(horizontal: r.sp(14), vertical: r.sp(8)),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Icon(Icons.calendar_today_rounded,
-                  color: Colors.white.withValues(alpha: 0.55),
-                  size: fsData * 0.6),
-              SizedBox(width: r.sp(7)),
-              Text(
-                _dataNumerica(agora),
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: fsData,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
-                  shadows: const [Shadow(color: Colors.black54, blurRadius: 8)],
-                ),
-              ),
-              SizedBox(width: r.sp(4)),
-              Text(
-                '${agora.year}',
-                style: GoogleFonts.poppins(
-                  color: Colors.white.withValues(alpha: 0.55),
-                  fontSize: fsAno,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: r.sp(2)),
-          Text(
-            diaSemanaLongo(agora),
-            style: GoogleFonts.poppins(
-              color: Colors.white.withValues(alpha: 0.65),
-              fontSize: fsSemana,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    ),
-    );
-  }
-
-  // ── Card de relógio — canto direito: relógio digital grande e moderno ────
-  Widget _buildRelogioCard(R r, _ClimaTheme theme, double sh) {
-    final fsHora = math.min(r.fs(30), sh * 0.065);
-
-    return ValueListenableBuilder<DateTime>(
-      valueListenable: InfoHub.instance.relogio,
-      builder: (context, agora, _) => Container(
-      padding: EdgeInsets.symmetric(horizontal: r.sp(16), vertical: r.sp(8)),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.corDestaque.withValues(alpha: 0.30)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: r.sp(7),
-            height: r.sp(7),
-            margin: EdgeInsets.only(right: r.sp(9)),
-            decoration: BoxDecoration(
-              color: theme.corDestaque,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                    color: theme.corDestaque.withValues(alpha: 0.65),
-                    blurRadius: 8),
-              ],
-            ),
-          ),
-          Text(
-            horaMinuto(agora),
-            style: GoogleFonts.orbitron(
-              color: Colors.white,
-              fontSize: fsHora,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.0,
-              shadows: [
-                Shadow(
-                    color: theme.corDestaque.withValues(alpha: 0.45),
-                    blurRadius: 20),
-                const Shadow(color: Colors.black54, blurRadius: 8),
-              ],
-            ),
-          ),
-        ],
-      ),
-    ),
-    );
-  }
-
-  // ── Saudação ──────────────────────────────────────────────────────────────
-  Widget _buildSaudacao(R r, _ClimaTheme theme, double sh) {
-    // Cor de destaque do nome: se a config não define uma cor fixa, NÃO usa
-    // a cor do tema diretamente (ela pode ser clara/cinza no clima nublado,
-    // se misturando com o fundo). Em vez disso, usa um dourado vibrante fixo
-    // que sempre contrasta bem com qualquer fundo, e só a sombra usa a cor
-    // do tema para manter a identidade visual.
-    final corHexConfig = _corDestaqueHex;
-    const corContrasteFixa = Color(0xFFFFD54F); // dourado — sempre se destaca
-    final corNome = corHexConfig.isNotEmpty
-        ? _resolverCorDestaque(theme)
-        : corContrasteFixa;
-
-    final fsNome = math.min(r.fs(_tamanhoNome), sh * 0.075);
-    return AnimatedBuilder(
-      animation: _pulseAnim,
-      builder: (_, __) => Transform.scale(
-        scale: _pulseAnim.value,
-        child: Container(
-          padding:
-              EdgeInsets.symmetric(horizontal: r.sp(24), vertical: r.sp(10)),
-          decoration: BoxDecoration(
-            // Glow bem sutil — só o suficiente pra ajudar a leitura,
-            // sem virar um "balão" escuro que chama atenção sozinho
-            color: Colors.black.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(30),
-          ),
+  /// Saudação, data/hora e o clima de agora — o que se lê de longe.
+  Widget _buildAbertura(R r, _ClimaTheme theme) {
+    final t = Tipo(r);
+    final nome = _nomeUsuario;
+    final corNome = _corDestaqueHex.isEmpty ? Destaques.bomDia : _resolverCorDestaque(theme);
+    final tamanho = r.fs(_tamanhoNome.clamp(28, 72) * 1.5);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
           child: RichText(
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            text: TextSpan(
-              children: [
+            text: TextSpan(children: [
+              TextSpan(
+                  text: nome.isEmpty ? _saudacao : '$_saudacao, ',
+                  style: _fonteEstilo(fontSize: tamanho, fontWeight: FontWeight.w400)),
+              if (nome.isNotEmpty)
                 TextSpan(
-                  text: '$_saudacao ',
-                  style: _fonteEstilo(
-                    fontSize: fsNome,
-                    fontWeight: FontWeight.w400,
-                    color: Colors.white,
-                    shadows: [
-                      Shadow(
-                          color: Colors.black.withValues(alpha: 0.75),
-                          blurRadius: 16),
-                      const Shadow(color: Colors.black, blurRadius: 4),
-                    ],
-                  ),
-                ),
-                TextSpan(
-                  text: '$_nomeUsuario,',
-                  style: _fonteEstilo(
-                    fontSize: fsNome,
-                    fontWeight: FontWeight.w800,
-                    color: corNome,
-                    shadows: [
-                      Shadow(
-                          color: corNome.withValues(alpha: 0.6),
-                          blurRadius: 28),
-                      Shadow(
-                          color: Colors.black.withValues(alpha: 0.75),
-                          blurRadius: 16),
-                      const Shadow(color: Colors.black, blurRadius: 4),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+                    text: nome,
+                    style: _fonteEstilo(
+                        fontSize: tamanho, fontWeight: FontWeight.w700, color: corNome)),
+            ]),
           ),
         ),
-      ),
-    );
-  }
-
-  // ── Clima destaque — ícone+temp centralizados, máx/mín ao lado (vertical) ──
-  Widget _buildClimaDestaque(R r, _ClimaTheme theme, double sh) {
-    return LayoutBuilder(
-      builder: (context, box) {
-        final boxH = box.maxHeight;
-        final boxW = box.maxWidth;
-
-        final temRodape =
-            _mostrarSensacao || (_mostrarChuva && _probChuva >= 30);
-        // Rodapé fixo (sensação | chuva) — altura reservada ANTES de calcular
-        // o tamanho do bloco principal, garantindo que nunca disputem espaço
-        final alturaRodape = temRodape ? boxH * 0.20 : 0.0;
-        final espacoVertical = boxH * 0.06;
-        final alturaBlocoPrincipal = boxH - alturaRodape - espacoVertical;
-
-        // Base de escala mais conservadora — evita que o ícone/temp fiquem
-        // grandes demais e ultrapassem a altura disponível na vertical
-        final base = math.min(alturaBlocoPrincipal * 0.92, boxW * 0.42);
-
-        final fsIcone = base * 0.95;
-        // "Tamanho da temperatura" das Configurações (72 = padrão).
-        final fsTemp = base * 0.90 * (_tamanhoTemp / 72).clamp(0.7, 1.4);
-        final fsGrau = fsTemp * 0.36;
-        final fsMinMax = base * 0.28;
-        final fsRodape = (alturaRodape * 0.26).clamp(10.0, 15.0);
-
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.04),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-                color: Colors.white.withValues(alpha: 0.10), width: 1.5),
+        SizedBox(height: r.sp(6)),
+        ValueListenableBuilder<DateTime>(
+          valueListenable: InfoHub.instance.relogio,
+          builder: (context, agora, _) => Text(
+            '${diaSemanaLongo(agora)}, ${agora.day} de ${mesesLongos[agora.month - 1]}, ${horaMinuto(agora)}',
+            style: t.subtitulo(cor: Cores.textoSecundario).copyWith(fontWeight: FontWeight.w400),
           ),
-          padding: EdgeInsets.all(boxW * 0.04),
-          child: Column(
-            mainAxisSize: MainAxisSize.max,
-            children: [
-              // ── Bloco principal: ícone | temperatura | máx/mín ao lado ──
-              // FittedBox como salvaguarda final: mesmo se as contas acima
-              // calcularem algo um pouco grande para o espaço real, o
-              // conteúdo encolhe proporcionalmente em vez de dar overflow.
-              Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      AnimatedBuilder(
-                        animation: _iconFloat,
-                        builder: (_, __) => Transform.translate(
-                          offset: Offset(0, _iconFloat.value * 1.3),
-                          child: Text(
-                            theme.emoji,
-                            style: TextStyle(
-                              fontSize: fsIcone,
-                              shadows: [
-                                Shadow(
-                                    color: theme.corDestaque
-                                        .withValues(alpha: 0.6),
-                                    blurRadius: 50),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(width: boxW * 0.02),
-
-                      Text(
-                        '$_tempAtual',
-                        style: _fonteEstilo(
-                          fontSize: fsTemp,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          height: 1.0,
-                          shadows: [
-                            Shadow(
-                                color: Colors.black.withValues(alpha: 0.5),
-                                blurRadius: 24),
-                            Shadow(
-                                color: _resolverCorDestaque(theme)
-                                    .withValues(alpha: 0.35),
-                                blurRadius: 50),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: EdgeInsets.only(top: boxH * 0.008),
-                        child: Text(
-                          '°C',
-                          style: GoogleFonts.poppins(
-                            color: Colors.white.withValues(alpha: 0.70),
-                            fontSize: fsGrau,
-                            fontWeight: FontWeight.w300,
-                            shadows: [
-                              Shadow(
-                                  color: Colors.black.withValues(alpha: 0.5),
-                                  blurRadius: 14)
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(width: boxW * 0.03),
-
-                      // Máx (cima) / Mín (baixo) — empilhados ao lado da temperatura
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _tempChipEscalado('↑', '$_tempMax°',
-                              const Color(0xFFFF6B6B), fsMinMax),
-                          SizedBox(height: boxH * 0.012),
-                          _tempChipEscalado('↓', '$_tempMin°',
-                              const Color(0xFF64B5F6), fsMinMax),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ── Rodapé fixo: sensação (esquerda) | chuva (direita) ──────
-              if (temRodape)
-                SizedBox(
-                  height: alturaRodape,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Sensação térmica — canto esquerdo
-                      if (_mostrarSensacao)
-                        Expanded(
-                          child: Container(
-                            alignment: Alignment.center,
-                            padding: EdgeInsets.symmetric(
-                                horizontal: boxW * 0.03,
-                                vertical: alturaRodape * 0.18),
-                            margin: EdgeInsets.only(
-                                right: (_mostrarChuva && _probChuva >= 30)
-                                    ? boxW * 0.02
-                                    : 0),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.30),
-                              borderRadius: BorderRadius.circular(30),
-                              border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.20),
-                                  width: 1),
-                            ),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.thermostat_rounded,
-                                      color:
-                                          Colors.white.withValues(alpha: 0.65),
-                                      size: fsRodape * 1.1),
-                                  SizedBox(width: boxW * 0.012),
-                                  Text(
-                                    'Sensação $_sensacao°C',
-                                    style: GoogleFonts.poppins(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.85),
-                                      fontSize: fsRodape,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-
-                      // Chuva — canto direito
-                      if (_mostrarChuva && _probChuva >= 30)
-                        Expanded(
-                          child: Container(
-                            alignment: Alignment.center,
-                            padding: EdgeInsets.symmetric(
-                                horizontal: boxW * 0.03,
-                                vertical: alturaRodape * 0.18),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1565C0)
-                                  .withValues(alpha: 0.45),
-                              borderRadius: BorderRadius.circular(30),
-                              border: Border.all(
-                                  color: const Color(0xFF64B5F6)
-                                      .withValues(alpha: 0.50)),
-                            ),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text('🌧',
-                                      style:
-                                          TextStyle(fontSize: fsRodape * 1.05)),
-                                  SizedBox(width: boxW * 0.012),
-                                  Text(
-                                    '$_probChuva% de chuva',
-                                    style: GoogleFonts.poppins(
-                                      color: const Color(0xFF90CAF9),
-                                      fontSize: fsRodape,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _tempChipEscalado(String seta, String val, Color cor, double fs) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(seta,
-            style: TextStyle(
-                color: cor,
-                fontSize: fs,
-                fontWeight: FontWeight.w900,
-                shadows: const [Shadow(color: Colors.black54, blurRadius: 8)])),
-        SizedBox(width: fs * 0.18),
-        Text(val,
-            style: GoogleFonts.poppins(
-                color: Colors.white.withValues(alpha: 0.88),
-                fontSize: fs,
-                fontWeight: FontWeight.w700,
-                shadows: const [Shadow(color: Colors.black54, blurRadius: 8)])),
+        ),
+        SizedBox(height: r.sp(20)),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(theme.emoji, style: TextStyle(fontSize: r.fs(64))),
+            SizedBox(width: r.sp(16)),
+            Text('$_tempAtual°',
+                style: t.heroi().copyWith(
+                    fontSize: r.fs((_tamanhoTemp / 72 * 104).clamp(72, 140)))),
+            SizedBox(width: r.sp(20)),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Hoje entre $_tempMin° e $_tempMax°', style: t.corpo()),
+                if (_mostrarSensacao)
+                  Text('Sensação de $_sensacao°', style: t.apoio()),
+                if (_mostrarChuva && _probChuva >= 30)
+                  Text('$_probChuva% de chance de chuva', style: t.apoio(cor: Cores.chuva)),
+              ],
+            ),
+          ],
+        ),
       ],
     );
   }
 
-  // ── Foto do Dia — card novo, estilo "recordação" ──────────────────────────
+  /// "Seu dia": o resumo montado pelo ResumoService.
+  Widget _buildSeuDia(R r) {
+    final t = Tipo(r);
+    return Superficie(
+      padding: EdgeInsets.all(r.sp(22)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Seu dia', style: t.subtitulo()),
+          SizedBox(height: r.sp(10)),
+          Expanded(
+            child: _resumo.isEmpty
+                ? Text('Dia livre: nenhum compromisso, jogo ou lembrete encontrado.',
+                    style: t.apoio())
+                : ListView(
+                    padding: EdgeInsets.zero,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: [
+                      for (final i in _resumo)
+                        Padding(
+                          padding: EdgeInsets.only(bottom: r.sp(10)),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(i.icone, color: i.cor, size: r.icon(26)),
+                              SizedBox(width: r.sp(14)),
+                              Expanded(child: Text(i.texto, style: t.corpo())),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildFotoDoDiaCard(R r, _ClimaTheme theme) {
+    final t = Tipo(r);
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(r.sp(28)),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Foto
-          Image.file(
-            File(_fotoDoDia!),
+          Image(
+            image: ResizeImage(FileImage(File(_fotoDoDia!)), width: 900),
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => Container(
-              color: Colors.white.withValues(alpha: 0.05),
-              child: Icon(Icons.image_rounded,
-                  color: Colors.white24, size: r.icon(40)),
-            ),
+            errorBuilder: (_, __, ___) => ColoredBox(color: Cores.superficie),
           ),
-          // Gradiente de legibilidade do label
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: EdgeInsets.fromLTRB(r.sp(18), r.sp(28), r.sp(18), r.sp(14)),
+              decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.55),
-                  ],
-                  stops: const [0.6, 1.0],
+                  colors: [Colors.transparent, Color(0xAA000000)],
                 ),
               ),
-            ),
-          ),
-          // Borda sutil
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.18), width: 1.5),
-              ),
-            ),
-          ),
-          // Label
-          Positioned(
-            left: r.sp(14),
-            bottom: r.sp(12),
-            right: r.sp(14),
-            child: Row(
-              children: [
-                Icon(Icons.auto_awesome,
-                    color: theme.corDestaque, size: r.icon(15)),
-                SizedBox(width: r.sp(6)),
-                Text(
-                  'Recordação do dia',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white.withValues(alpha: 0.92),
-                    fontSize: r.fs(12),
-                    fontWeight: FontWeight.w600,
-                    shadows: const [
-                      Shadow(color: Colors.black87, blurRadius: 6)
-                    ],
-                  ),
-                ),
-              ],
+              child: Text('Recordação do dia', style: t.apoio(cor: Cores.texto)),
             ),
           ),
         ],
@@ -929,174 +512,53 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
     );
   }
 
-  // ── Notícia — com imagem ao lado, igual a TelaBrasil ──────────────────────
   Widget _buildNoticiaCard(R r, _ClimaTheme theme) {
+    final t = Tipo(r);
     final n = _noticia;
-    final temImagem = n != null && n.imagem.isNotEmpty;
-    // Sem BackdropFilter: o fundo é animado e o blur seria refeito a cada
-    // quadro. O fundo escuro translúcido já garante a leitura.
     return GestureDetector(
       onTap: _abrirNoticia,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
-        child: Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.45),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(
-                color: Colors.white.withValues(alpha: 0.15), width: 1.5),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Imagem da notícia (se disponível)
-              if (temImagem)
-                ClipRRect(
-                  borderRadius:
-                      const BorderRadius.horizontal(left: Radius.circular(22)),
-                  child: SizedBox(
-                    width: r.w(0.20),
-                    child: CachedNetworkImage(
-                      imageUrl: n.imagem,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => Container(
-                          color: Colors.white.withValues(alpha: 0.05)),
-                      errorWidget: (_, __, ___) => Container(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        child: Icon(Icons.article_rounded,
-                            color: Colors.white24, size: r.icon(30)),
+      child: Superficie(
+        padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (n != null && n.imagem.isNotEmpty)
+              Expanded(
+                flex: 5,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(r.sp(24))),
+                  child: CachedNetworkImage(
+                    imageUrl: n.imagem,
+                    fit: BoxFit.cover,
+                    memCacheWidth: 700,
+                    errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+            Expanded(
+              flex: 6,
+              child: Padding(
+                padding: EdgeInsets.all(r.sp(18)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Notícia do dia', style: t.legenda()),
+                    SizedBox(height: r.sp(6)),
+                    Expanded(
+                      child: Text(
+                        n?.titulo ?? 'Sem conexão com as notícias agora.',
+                        style: t.corpo(peso: FontWeight.w700),
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ),
-                )
-              else
-                Container(
-                  width: r.sp(56),
-                  margin: EdgeInsets.all(r.sp(16)),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1565C0).withValues(alpha: 0.7),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.newspaper_rounded,
-                      color: Colors.white, size: r.icon(22)),
-                ),
-
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                      horizontal: r.sp(18), vertical: r.sp(14)),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                                horizontal: r.sp(9), vertical: r.sp(3)),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1565C0)
-                                  .withValues(alpha: 0.25),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                  color: const Color(0xFF64B5F6)
-                                      .withValues(alpha: 0.45)),
-                            ),
-                            child: Text('PRINCIPAL NOTÍCIA',
-                                style: GoogleFonts.poppins(
-                                    color: const Color(0xFF90CAF9),
-                                    fontSize: r.fs(10),
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 1)),
-                          ),
-                          const Spacer(),
-                          Icon(Icons.rss_feed_rounded,
-                              color: Colors.white.withValues(alpha: 0.30),
-                              size: r.icon(11)),
-                          SizedBox(width: r.sp(4)),
-                          Text('Fonte: G1',
-                              style: GoogleFonts.poppins(
-                                  color: Colors.white.withValues(alpha: 0.40),
-                                  fontSize: r.fs(11),
-                                  fontWeight: FontWeight.w500)),
-                        ],
-                      ),
-                      SizedBox(height: r.sp(8)),
-                      Text(
-                        n == null
-                            ? 'Sem conexão com as notícias'
-                            : n.titulo,
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: r.fs(17),
-                          fontWeight: FontWeight.w700,
-                          height: 1.25,
-                          shadows: const [
-                            Shadow(color: Colors.black54, blurRadius: 8)
-                          ],
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      SizedBox(height: r.sp(6)),
-                      Text(
-                        n == null
-                            ? 'Verifique a internet para ver a notícia do dia.'
-                            : (n.descricao.length >= 40
-                                ? n.descricao
-                                : 'Toque para ler a notícia completa.'),
-                        style: GoogleFonts.poppins(
-                          color: Colors.white.withValues(alpha: 0.62),
-                          fontSize: r.fs(13),
-                          height: 1.35,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
+                    if (n != null) Text('Toque para ler', style: t.legenda(cor: Destaques.bomDia)),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Frase do dia — rodapé discreto, marquee se necessário ─────────────────
-  Widget _buildFraseRodape(R r, _ClimaTheme theme, double sw) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.symmetric(horizontal: r.sp(18), vertical: r.sp(10)),
-      decoration: BoxDecoration(
-        color: theme.corDestaque.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-            color: theme.corDestaque.withValues(alpha: 0.30), width: 1),
-      ),
-      child: Row(
-        children: [
-          Text('✨', style: TextStyle(fontSize: r.fs(14))),
-          SizedBox(width: r.sp(10)),
-          Expanded(
-            child: Text(
-              _frase.isEmpty
-                  ? '"Cada amanhecer é uma nova chance de ser melhor." — Anônimo'
-                  : _frase,
-              style: GoogleFonts.poppins(
-                color: Colors.white.withValues(alpha: 0.88),
-                fontSize: r.fs(13),
-                fontWeight: FontWeight.w400,
-                fontStyle: FontStyle.italic,
-                shadows: const [Shadow(color: Colors.black54, blurRadius: 6)],
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

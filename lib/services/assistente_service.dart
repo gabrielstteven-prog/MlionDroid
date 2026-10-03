@@ -1,0 +1,361 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:googleapis/tasks/v1.dart' as tasks;
+
+import '../sistema.dart';
+import '../util.dart';
+import 'football_service.dart';
+import 'google_auth_service.dart';
+import 'resumo_service.dart';
+import 'weather_service.dart';
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Assistente de voz — o "Alexa" do painel, 100% local.
+//
+//  Fluxo: toque no microfone → reconhecimento de voz do Android → texto →
+//  [interpretar] (regras em português) → ação + resposta falada.
+//
+//  Tudo o que ele não entende cai em [TipoComando.desconhecido]. É aí que
+//  um cérebro maior (Jarvis / um modelo de linguagem) pode ser plugado no
+//  futuro, sem mudar o resto do app.
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum TipoComando {
+  temporizador,
+  cancelarTemporizador,
+  adicionarCompra,
+  clima,
+  jogo,
+  hora,
+  data,
+  resumo,
+  abrirTela,
+  desconhecido,
+}
+
+class Comando {
+  final TipoComando tipo;
+  final Duration? duracao;
+  final List<String> itens;
+  final String? tela;
+  final String textoOriginal;
+  const Comando(this.tipo, this.textoOriginal,
+      {this.duracao, this.itens = const [], this.tela});
+}
+
+const _numeros = {
+  'um': 1, 'uma': 1, 'dois': 2, 'duas': 2, 'tres': 3, 'quatro': 4,
+  'cinco': 5, 'seis': 6, 'sete': 7, 'oito': 8, 'nove': 9, 'dez': 10,
+  'onze': 11, 'doze': 12, 'quinze': 15, 'vinte': 20, 'vinte e cinco': 25,
+  'trinta': 30, 'quarenta': 40, 'quarenta e cinco': 45, 'cinquenta': 50,
+  'sessenta': 60, 'noventa': 90,
+};
+
+const _telas = {
+  'clima': 'clima', 'tempo': 'clima', 'previsao': 'clima',
+  'noticias do brasil': 'brasil', 'brasil': 'brasil',
+  'regiao': 'regiao', 'noticias da regiao': 'regiao',
+  'calendario': 'calendario', 'agenda': 'calendario', 'compromissos': 'calendario',
+  'compras': 'compras', 'lista': 'compras', 'mercado': 'compras',
+  'fotos': 'fotos', 'memorias': 'fotos',
+  'tabela': 'classificacao', 'classificacao': 'classificacao',
+  'jogo': 'proxima_partida', 'partida': 'proxima_partida',
+  'time': 'palmeiras', 'noticias do time': 'palmeiras',
+  'musica': 'spotify', 'spotify': 'spotify',
+};
+
+/// Interpreta a frase falada. Função pura — coberta por testes.
+Comando interpretar(String falado) {
+  final f = normalizar(falado);
+  if (f.isEmpty) return Comando(TipoComando.desconhecido, falado);
+
+  // Temporizador: "timer de 10 minutos", "temporizador de meia hora"
+  final ehTimer = RegExp(r'\b(timer|temporizador|cronometro|alarme|despertador)\b').hasMatch(f);
+  if (ehTimer && RegExp(r'\b(cancela|cancelar|para|parar|desliga|desligar)\b').hasMatch(f)) {
+    return Comando(TipoComando.cancelarTemporizador, falado);
+  }
+  if (ehTimer || RegExp(r'\b(me avisa|me avise) (em|daqui)').hasMatch(f)) {
+    final d = _duracao(f);
+    if (d != null) return Comando(TipoComando.temporizador, falado, duracao: d);
+  }
+
+  // Compras: "adiciona leite e pão na lista", "comprar arroz"
+  // Usa o texto original (com acentos) para os itens: "pão", não "pao".
+  final original = falado
+      .toLowerCase()
+      .replaceAll(RegExp(r'[.!?]'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  final compra = RegExp(
+          r'^(?:adiciona|adicionar|adicione|coloca|colocar|coloque|põe|poe|bota|anota|anotar|inclui|incluir|comprar|compra)\s+(.+?)(?:\s+(?:na|à|a|para a)\s+lista(?:\s+de\s+compras)?)?$')
+      .firstMatch(original);
+  if (compra != null) {
+    final itens = compra
+        .group(1)!
+        .split(RegExp(r',| e '))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (itens.isNotEmpty) {
+      return Comando(TipoComando.adicionarCompra, falado, itens: itens);
+    }
+  }
+
+  if (RegExp(r'\b(que horas|horas sao|hora agora)\b').hasMatch(f)) {
+    return Comando(TipoComando.hora, falado);
+  }
+  if (RegExp(r'\b(que dia|dia e hoje|data de hoje)\b').hasMatch(f)) {
+    return Comando(TipoComando.data, falado);
+  }
+  if (RegExp(r'\b(resumo|como esta o (meu )?dia|meu dia)\b').hasMatch(f)) {
+    return Comando(TipoComando.resumo, falado);
+  }
+
+  // Abrir tela: "mostra o clima", "abre a agenda"
+  final abrir = RegExp(r'^(?:mostra|mostrar|mostre|abre|abrir|abra|vai para|ir para)\s+(?:o |a |os |as )?(.+)$')
+      .firstMatch(f);
+  if (abrir != null) {
+    final alvo = abrir.group(1)!;
+    for (final e in _telas.entries) {
+      if (alvo.contains(e.key)) return Comando(TipoComando.abrirTela, falado, tela: e.value);
+    }
+  }
+
+  if (RegExp(r'\b(jogo|joga|partida|placar)\b').hasMatch(f)) {
+    return Comando(TipoComando.jogo, falado);
+  }
+  if (RegExp(r'\b(chover|chuva|clima|tempo|temperatura|frio|calor|graus)\b').hasMatch(f)) {
+    return Comando(TipoComando.clima, falado);
+  }
+  return Comando(TipoComando.desconhecido, falado);
+}
+
+Duration? _duracao(String f) {
+  if (RegExp(r'\bmeia hora\b').hasMatch(f)) return const Duration(minutes: 30);
+  final m = RegExp(r'(\d+|[a-z]+(?: e [a-z]+)?)\s+(segundos?|minutos?|horas?)').firstMatch(f);
+  if (m == null) return null;
+  final bruto = m.group(1)!;
+  final n = int.tryParse(bruto) ?? _numeros[bruto] ?? _numeros[bruto.split(' ').last];
+  if (n == null || n <= 0) return null;
+  final unidade = m.group(2)!;
+  if (unidade.startsWith('seg')) return Duration(seconds: n);
+  if (unidade.startsWith('hora')) return Duration(hours: n);
+  return Duration(minutes: n);
+}
+
+String descreverDuracao(Duration d) {
+  if (d.inHours >= 1 && d.inMinutes % 60 == 0) {
+    return d.inHours == 1 ? '1 hora' : '${d.inHours} horas';
+  }
+  if (d.inMinutes >= 1 && d.inSeconds % 60 == 0) {
+    return d.inMinutes == 1 ? '1 minuto' : '${d.inMinutes} minutos';
+  }
+  return '${d.inSeconds} segundos';
+}
+
+class Temporizador {
+  final int id;
+  final String rotulo;
+  final DateTime fim;
+  bool tocando = false;
+  Temporizador(this.id, this.rotulo, this.fim);
+  Duration get restante {
+    final r = fim.difference(DateTime.now());
+    return r.isNegative ? Duration.zero : r;
+  }
+}
+
+enum EstadoAssistente { parado, ouvindo, pensando, respondendo }
+
+class AssistenteService extends ChangeNotifier {
+  AssistenteService._();
+  static final AssistenteService instance = AssistenteService._();
+
+  EstadoAssistente estado = EstadoAssistente.parado;
+  String ultimaFala = '';
+  String ultimaResposta = '';
+
+  final List<Temporizador> temporizadores = [];
+  int _proximoId = 1;
+  final Map<int, Timer> _timers = {};
+
+  /// Pedido para o rodízio mostrar uma tela ("mostra o clima").
+  final ValueNotifier<String?> pedidoDeTela = ValueNotifier(null);
+
+  bool get algumTocando => temporizadores.any((t) => t.tocando);
+
+  /// Toque no microfone.
+  Future<void> ouvir() async {
+    if (estado == EstadoAssistente.ouvindo) return;
+    await Sistema.pararFala();
+    estado = EstadoAssistente.ouvindo;
+    ultimaFala = '';
+    ultimaResposta = '';
+    notifyListeners();
+    final falado = await Sistema.ouvir(prompt: 'Como posso ajudar?');
+    if (falado.trim().isEmpty) {
+      estado = EstadoAssistente.parado;
+      notifyListeners();
+      return;
+    }
+    await executarTexto(falado);
+  }
+
+  Future<void> executarTexto(String falado) async {
+    ultimaFala = falado;
+    estado = EstadoAssistente.pensando;
+    notifyListeners();
+    String resposta;
+    try {
+      resposta = await _executar(interpretar(falado));
+    } catch (e) {
+      debugPrint('Assistente: $e');
+      resposta = 'Não consegui fazer isso agora. Verifique a internet e tente de novo.';
+    }
+    ultimaResposta = resposta;
+    estado = EstadoAssistente.respondendo;
+    notifyListeners();
+    await Sistema.falar(resposta);
+    Timer(const Duration(seconds: 8), () {
+      if (estado == EstadoAssistente.respondendo) {
+        estado = EstadoAssistente.parado;
+        notifyListeners();
+      }
+    });
+  }
+
+  void fechar() {
+    estado = EstadoAssistente.parado;
+    Sistema.pararFala();
+    notifyListeners();
+  }
+
+  Future<String> _executar(Comando c) async {
+    switch (c.tipo) {
+      case TipoComando.temporizador:
+        final d = c.duracao!;
+        iniciarTemporizador(d);
+        return 'Temporizador de ${descreverDuracao(d)} começando agora.';
+      case TipoComando.cancelarTemporizador:
+        if (temporizadores.isEmpty) return 'Não há temporizador ativo.';
+        cancelarTodos();
+        return 'Temporizador cancelado.';
+      case TipoComando.adicionarCompra:
+        final ok = await _adicionarCompras(c.itens);
+        return ok
+            ? 'Adicionei ${_juntar(c.itens)} na lista de compras.'
+            : 'Não encontrei a lista de compras. Conecte sua conta Google nas configurações.';
+      case TipoComando.hora:
+        final a = DateTime.now();
+        return 'Agora são ${a.hour} horas e ${a.minute} minutos.';
+      case TipoComando.data:
+        final a = DateTime.now();
+        return 'Hoje é ${diaSemanaLongo(a).toLowerCase()}, ${a.day} de ${mesesLongos[a.month - 1]}.';
+      case TipoComando.clima:
+        return _respostaClima(c.textoOriginal);
+      case TipoComando.jogo:
+        return _respostaJogo();
+      case TipoComando.resumo:
+        final itens = await ResumoService.instance.montar();
+        if (itens.isEmpty) return 'Ainda não tenho informações do seu dia.';
+        return itens.map((i) => i.texto).join(' ').replaceAll('°', ' graus');
+      case TipoComando.abrirTela:
+        pedidoDeTela.value = c.tela;
+        return 'Abrindo.';
+      case TipoComando.desconhecido:
+        return 'Ainda não sei responder isso. Tente: timer de 10 minutos, '
+            'vai chover hoje, adiciona leite na lista, ou quando é o próximo jogo.';
+    }
+  }
+
+  String _juntar(List<String> l) =>
+      l.length == 1 ? l.first : '${l.sublist(0, l.length - 1).join(', ')} e ${l.last}';
+
+  Future<String> _respostaClima(String pergunta) async {
+    final c = await WeatherService.instance.obter();
+    if (c == null) return 'Estou sem dados de clima agora.';
+    final chuva = c.chuvaRestanteHoje();
+    final f = normalizar(pergunta);
+    if (f.contains('amanha') && c.proximosDias.isNotEmpty) {
+      final a = c.proximosDias.first;
+      return 'Amanhã: entre ${a.min} e ${a.max} graus, ${descricaoClima(a.codigo).toLowerCase()}, '
+          '${a.chanceChuva}% de chance de chuva.';
+    }
+    final base = 'Agora faz ${c.temp} graus, sensação de ${c.sensacao}.';
+    if (chuva.horarios.isNotEmpty) {
+      return '$base Pode chover a partir das ${chuva.horarios.first.hour} horas, '
+          'com ${chuva.maxima}% de chance.';
+    }
+    return '$base Sem chuva prevista para o resto do dia.';
+  }
+
+  Future<String> _respostaJogo() async {
+    final svc = FootballService.instance;
+    final r = await svc.proximosJogos();
+    final p = r?.valor.firstOrNull;
+    if (p == null) return 'Não encontrei o próximo jogo do ${svc.timeAtual.nome}.';
+    final adv = p.adversarioDe(svc.timeAtual.espnId).nome;
+    if (p.aoVivo) {
+      return 'Está rolando agora: ${p.mandante.nome} ${p.mandante.gols} a '
+          '${p.visitante.gols} ${p.visitante.nome}, ${p.relogio}.';
+    }
+    final quando = etiquetaDias(p.data).toLowerCase();
+    return 'O ${svc.timeAtual.nome} joga ${quando == 'hoje' || quando == 'amanhã' ? quando : 'em ${diaSemanaLongo(p.data).toLowerCase()}, dia ${p.data.day},'} '
+        'às ${p.data.hour} horas${p.data.minute > 0 ? ' e ${p.data.minute}' : ''}, contra o $adv'
+        '${p.estadio.isNotEmpty ? ', no ${p.estadio}' : ''}.';
+  }
+
+  Future<bool> _adicionarCompras(List<String> itens) async {
+    final client = await GoogleAuthService.instance.cliente();
+    if (client == null) return false;
+    try {
+      final api = tasks.TasksApi(client);
+      final listas = await api.tasklists.list();
+      final alvo = (listas.items ?? <tasks.TaskList>[])
+          .where((l) => l.id != null && ehListaDeCompras(l.title ?? ''))
+          .firstOrNull;
+      if (alvo == null) return false;
+      for (final i in itens) {
+        final titulo = i[0].toUpperCase() + i.substring(1);
+        await api.tasks.insert(tasks.Task(title: titulo), alvo.id!);
+      }
+      return true;
+    } finally {
+      client.close();
+    }
+  }
+
+  // ── Temporizadores ───────────────────────────────────────────────────────
+  void iniciarTemporizador(Duration d) {
+    final t = Temporizador(_proximoId++, descreverDuracao(d), DateTime.now().add(d));
+    temporizadores.add(t);
+    _timers[t.id] = Timer(d, () => _tocar(t));
+    notifyListeners();
+  }
+
+  void _tocar(Temporizador t) {
+    t.tocando = true;
+    notifyListeners();
+    Sistema.tocarAlarme();
+    // Para sozinho depois de 2 minutos, se ninguém tocar na tela.
+    _timers[t.id] = Timer(const Duration(minutes: 2), () => dispensar(t.id));
+  }
+
+  void dispensar(int id) {
+    _timers.remove(id)?.cancel();
+    temporizadores.removeWhere((t) => t.id == id);
+    if (!algumTocando) Sistema.pararAlarme();
+    notifyListeners();
+  }
+
+  void cancelarTodos() {
+    for (final t in _timers.values) {
+      t.cancel();
+    }
+    _timers.clear();
+    temporizadores.clear();
+    Sistema.pararAlarme();
+    notifyListeners();
+  }
+}

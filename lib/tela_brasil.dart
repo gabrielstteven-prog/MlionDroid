@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-
 import 'config_manager.dart';
+import 'design/tema.dart';
 import 'services/news_service.dart';
 import 'widgets/tela_noticias.dart';
 
@@ -10,7 +9,7 @@ const Map<String, ({String nome, String url, Color cor})> categoriasBrasil = {
   'politica': (
     nome: 'Política',
     url: 'https://g1.globo.com/rss/g1/politica/',
-    cor: Color(0xFFEF5350)
+    cor: Color(0xFFFF8A80)
   ),
   'economia': (
     nome: 'Economia',
@@ -56,16 +55,13 @@ class TelaBrasil extends StatelessWidget {
 
     return TelaNoticias(
       aoTerminar: aoTerminar,
-      corDestaque: const Color(0xFFFFB300),
-      tituloLeitor: 'G1 — BRASIL',
+      icone: Icons.public_rounded,
+      titulo: 'Notícias do Brasil',
+      subtitulo: [for (final k in selecionadas) categoriasBrasil[k]!.nome].join(', '),
+      destaque: Destaques.brasil,
       velocidadePxSeg: cfg.getInt('brasil', 'duracao_scroll_px_seg', 35),
       pausaFinalSeg: cfg.getInt('brasil', 'pausa_final_seg', 10),
-      corDoRotulo: (n) => porRotulo[n.rotulo] ?? const Color(0xFFFFB300),
-      fundo: const LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [Color(0xFF0a1628), Color(0xFF060910)],
-      ),
+      corDoRotulo: (n) => porRotulo[n.rotulo] ?? Destaques.brasil,
       carregar: () async {
         final fontes = [
           for (final k in selecionadas)
@@ -80,62 +76,8 @@ class TelaBrasil extends StatelessWidget {
         // para a ordem ser previsível e variada.
         return (noticias: _intercalar(r.noticias), atualizadoEm: r.atualizadoEm);
       },
-      cabecalho: (context, r, manual) => Padding(
-        padding: EdgeInsets.fromLTRB(r.sp(32), r.sp(24), r.sp(32), r.sp(10)),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('🇧🇷', style: TextStyle(fontSize: r.fs(38))),
-                const SizedBox(width: 16),
-                Text('BRASIL',
-                    style: GoogleFonts.rajdhani(
-                        color: Colors.white,
-                        fontSize: r.fs(40),
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 4)),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              alignment: WrapAlignment.center,
-              children: [
-                for (final k in selecionadas)
-                  _chip(categoriasBrasil[k]!.nome, categoriasBrasil[k]!.cor, r.fs(13)),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Container(
-              height: 1.5,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(colors: [
-                  Color(0xFF009C3B),
-                  Color(0xFFFFDF00),
-                  Color(0xFF002776),
-                ]),
-              ),
-            ),
-            const SizedBox(height: 6),
-          ],
-        ),
-      ),
     );
   }
-
-  static Widget _chip(String texto, Color cor, double fs) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        decoration: BoxDecoration(
-          color: cor.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: cor.withValues(alpha: 0.3)),
-        ),
-        child: Text(texto,
-            style: GoogleFonts.rajdhani(
-                color: cor, fontSize: fs, fontWeight: FontWeight.w700)),
-      );
 
   /// [A1, A2, B1, B2, C1] → [A1, B1, C1, A2, B2]
   static List<Noticia> _intercalar(List<Noticia> lista) {

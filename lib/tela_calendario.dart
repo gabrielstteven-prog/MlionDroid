@@ -1,8 +1,6 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:googleapis/calendar/v3.dart' as cal;
 import 'package:googleapis/tasks/v1.dart' as tasks;
 import 'package:http/http.dart' as http;
@@ -11,7 +9,7 @@ import 'package:table_calendar/table_calendar.dart';
 
 import 'cache_manager.dart';
 import 'config_manager.dart';
-import 'performance_manager.dart';
+import 'design/tema.dart';
 import 'responsive.dart';
 import 'services/google_auth_service.dart';
 
@@ -26,6 +24,7 @@ class ItemAgenda {
   final TipoItem tipo;
   final DateTime? dataHora;
   final bool semData; // tarefa sem data: aparece em "Hoje" como lembrete
+  final bool aniversario;
   bool concluido;
 
   ItemAgenda({
@@ -37,6 +36,7 @@ class ItemAgenda {
     this.dataHora,
     this.concluido = false,
     this.semData = false,
+    this.aniversario = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -48,6 +48,7 @@ class ItemAgenda {
         'dataHora': dataHora?.toIso8601String(),
         'concluido': concluido,
         'semData': semData,
+        'aniversario': aniversario,
       };
 
   factory ItemAgenda.fromJson(Map<String, dynamic> j) => ItemAgenda(
@@ -61,6 +62,7 @@ class ItemAgenda {
             : null,
         concluido: j['concluido'] as bool? ?? false,
         semData: j['semData'] as bool? ?? false,
+        aniversario: j['aniversario'] as bool? ?? false,
       );
 }
 
@@ -101,56 +103,24 @@ class _TelaCalendarioState extends State<TelaCalendario>
   Timer? _scrollTimer;
   Timer? _saidaTimer;
 
-  // ── ANIMAÇÕES ─────────────────────────────────────────────────────────────
-  late AnimationController _auroraCtrl;
-  late AnimationController _pulseCtrl;
-  late Animation<double> _pulseAnim;
-  late AnimationController _entradaCtrl;
-  late Animation<double> _entradaAnim;
-  late AnimationController _painelCtrl;
-  late Animation<double> _painelAnim;
+  // ── ANIMAÇÃO do painel do dia (só ao tocar num dia) ──────────────────────
+  late final AnimationController _painelCtrl = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 300));
+  late final Animation<double> _painelAnim =
+      CurvedAnimation(parent: _painelCtrl, curve: Curves.easeOutCubic);
 
   final Set<String> _marcando = {};
 
-  // ── CORES ─────────────────────────────────────────────────────────────────
-  static const _verde = Color(0xFF00E676);
-  static const _ciano = Color(0xFF18FFFF);
-  static const _amarelo = Color(0xFFFFD740);
-  static const _vermelho = Color(0xFFFF5252);
-  static const _roxo = Color(0xFFE040FB);
-  static const _rosa = Color(0xFFFF4081);
+  // ── CORES (padrão do app) ─────────────────────────────────────────────────
+  static const _corEvento = Destaques.agenda;
+  static const _corTarefa = Cores.aviso;
+  static const _corAtraso = Cores.alerta;
+  static const _corAniversario = Destaques.fotos;
 
   @override
   void initState() {
     super.initState();
-
-    _auroraCtrl =
-        AnimationController(vsync: this, duration: const Duration(seconds: 8));
-
-    _pulseCtrl =
-        AnimationController(vsync: this, duration: const Duration(seconds: 2));
-    _pulseAnim = Tween<double>(begin: 0.4, end: 1.0)
-        .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
-
-    // Aurora de fundo e pulso são decorativos — só em loop no modo completo.
-    if (!PerformanceManager.instance.modoEconomico) {
-      _auroraCtrl.repeat(reverse: true);
-      _pulseCtrl.repeat(reverse: true);
-    }
-
-    _entradaCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 800));
-    _entradaAnim =
-        CurvedAnimation(parent: _entradaCtrl, curve: Curves.easeOutCubic);
-    _entradaCtrl.forward();
-
-    _painelCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 350));
-    _painelAnim =
-        CurvedAnimation(parent: _painelCtrl, curve: Curves.easeOutCubic);
-
     _autenticarECarregar();
-
     // Anti-travamento
     _antiTravamento = Timer(const Duration(minutes: 2), () {
       if (mounted) widget.aoTerminar();
@@ -159,9 +129,6 @@ class _TelaCalendarioState extends State<TelaCalendario>
 
   @override
   void dispose() {
-    _auroraCtrl.dispose();
-    _pulseCtrl.dispose();
-    _entradaCtrl.dispose();
     _painelCtrl.dispose();
     _scrollTimer?.cancel();
     _saidaTimer?.cancel();
@@ -269,6 +236,7 @@ class _TelaCalendarioState extends State<TelaCalendario>
             id: ev.id ?? '',
             titulo: ev.summary ?? 'Sem título',
             tipo: TipoItem.evento,
+            aniversario: ev.eventType == 'birthday',
             horario: ev.start?.dateTime != null ? DateFormat('HH:mm').format(local) : null,
             dataHora: local,
           ));
@@ -438,350 +406,114 @@ class _TelaCalendarioState extends State<TelaCalendario>
   @override
   Widget build(BuildContext context) {
     final r = R(context);
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Positioned.fill(child: _buildAurora()),
-          Positioned.fill(
-              child: Container(color: Colors.black.withValues(alpha: 0.28))),
-          FadeTransition(
-            opacity: _entradaAnim,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: _carregando || _semConta
-                    ? _buildCarregando(r)
-                    : _buildLayout(r),
-              ),
-            ),
-          ),
-        ],
-      ),
+    return EstruturaTela(
+      icone: Icons.calendar_month_rounded,
+      titulo: 'Agenda',
+      subtitulo: DateFormat("EEEE, d 'de' MMMM", 'pt_BR').format(_hoje),
+      destaque: _corEvento,
+      rodapeDireita:
+          _atualizadoEm != null ? 'Atualizado ${descreverIdade(_atualizadoEm!)}' : null,
+      child: _semConta
+          ? const AvisoTela(
+              icone: Icons.account_circle_outlined,
+              titulo: 'Conta Google não conectada',
+              texto: 'Abra Configurações › Calendário e toque em "Conectar conta Google".',
+              cor: _corEvento,
+            )
+          : _carregando
+              ? Column(mainAxisSize: MainAxisSize.min, children: [
+                  const Expanded(child: Carregando(cor: _corEvento)),
+                  Text(_statusMsg, style: Tipo(r).apoio()),
+                ])
+              : r.useSideBySide
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(flex: 11, child: _buildCalendario(r)),
+                        SizedBox(width: r.sp(32)),
+                        Expanded(flex: 9, child: _buildDireita(r)),
+                      ],
+                    )
+                  : Column(
+                      children: [
+                        Expanded(flex: 5, child: _buildCalendario(r)),
+                        SizedBox(height: r.sp(16)),
+                        Expanded(flex: 4, child: _buildDireita(r)),
+                      ],
+                    ),
     );
   }
 
-  Widget _buildAurora() {
-    return RepaintBoundary(
-      child: CustomPaint(
-        painter: _AuroraPainter(_auroraCtrl),
-        child: const SizedBox.expand(),
-      ),
-    );
-  }
-
-  Widget _buildSemConta(R r) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.account_circle_outlined, color: _ciano, size: r.icon(64)),
-          const SizedBox(height: 16),
-          Text('Conta Google não conectada',
-              style: GoogleFonts.poppins(
-                  color: Colors.white, fontSize: r.fs(24), fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
-          Text('Abra Configurações › Calendário e toque em "Conectar conta Google".',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(color: Colors.white60, fontSize: r.fs(16))),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCarregando(R r) {
-    if (_semConta) return _buildSemConta(r);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AnimatedBuilder(
-            animation: _pulseAnim,
-            builder: (_, __) => Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const SweepGradient(
-                    colors: [_ciano, _roxo, _verde, _ciano]),
-                boxShadow: [
-                  BoxShadow(
-                      color: _ciano.withValues(alpha: _pulseAnim.value * 0.6),
-                      blurRadius: 24,
-                      spreadRadius: 4)
-                ],
-              ),
-              child: Icon(Icons.calendar_month_rounded,
-                  color: Colors.white, size: r.icon(40)),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(_statusMsg,
-              style: GoogleFonts.poppins(color: Colors.white, fontSize: 18)),
-        ],
-      ),
-    );
-  }
-
-  // ── LAYOUT: esquerda calendário, direita compromissos ─────────────────────
-  Widget _buildLayout(R r) {
-    if (!r.useSideBySide) {
-      return Column(
-        children: [
-          SizedBox(
-            height: r.isCompact ? r.h(0.42) : r.h(0.46),
-            child: _buildCalendario(r),
-          ),
-          const SizedBox(height: 10),
-          Expanded(child: _buildColunasDireita(r)),
-        ],
-      );
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          flex: 54,
-          child: _buildCalendario(r),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          flex: 46,
-          child: _buildColunasDireita(r),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildColunasDireita(R r) {
+  Widget _buildDireita(R r) {
     if (_diaSelecionado != null) {
       return FadeTransition(
         opacity: _painelAnim,
-        child: SlideTransition(
-          position:
-              Tween<Offset>(begin: const Offset(0.05, 0), end: Offset.zero)
-                  .animate(_painelAnim),
-          child: _buildPainelDia(_diaSelecionado!, r),
-        ),
+        child: _buildPainelDia(_diaSelecionado!, r),
       );
     }
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
             child: _buildLista(
-          titulo: 'Compromissos de Hoje',
-          subtitulo: DateFormat("dd 'de' MMMM", 'pt_BR').format(_hoje),
-          itens: _itensHoje,
-          cor: _verde,
-          ctrl: _scrollHoje,
-          r: r,
-        )),
-        const SizedBox(height: 12),
+                titulo: 'Hoje', itens: _itensHoje, ctrl: _scrollHoje, r: r)),
+        SizedBox(height: r.sp(20)),
         Expanded(
             child: _buildLista(
-          titulo: 'Compromissos de Amanhã',
-          subtitulo: DateFormat("dd 'de' MMMM", 'pt_BR')
-              .format(_hoje.add(const Duration(days: 1))),
-          itens: _itensAmanha,
-          cor: _ciano,
-          ctrl: _scrollAmanha,
-          r: r,
-        )),
+                titulo: 'Amanhã', itens: _itensAmanha, ctrl: _scrollAmanha, r: r)),
       ],
     );
   }
 
-  // ── CALENDÁRIO ────────────────────────────────────────────────────────────
+  // ── CALENDÁRIO DO MÊS ─────────────────────────────────────────────────────
   Widget _buildCalendario(R r) {
-    return _card(
-      gradient: LinearGradient(colors: [
-        Colors.white.withValues(alpha: 0.13),
-        Colors.white.withValues(alpha: 0.05),
-      ], begin: Alignment.topLeft, end: Alignment.bottomRight),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+    final t = Tipo(r);
+    return Superficie(
+      padding: EdgeInsets.fromLTRB(r.sp(16), r.sp(16), r.sp(16), r.sp(8)),
       child: Column(
         children: [
-          // ── Topo: Calendário do Google ─────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Ícone colorido do Google Calendar
-                Image.asset(
-                  'assets/icons/Gemini_Generated_Image_tl4qrktl4qrktl4q.png',
-                  width: r.fs(60),
-                  height: r.fs(60),
-                  errorBuilder: (_, __, ___) => _googleCalIcon(r.fs(34)),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  'Calendário do Google',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white.withValues(alpha: 0.92),
-                    fontSize: r.fs(18),
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // ── Divider sutil ─────────────────────────────────────────────
-          Container(
-            height: 1,
-            margin: const EdgeInsets.only(bottom: 14),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [
-                Colors.transparent,
-                Colors.white.withValues(alpha: 0.18),
-                Colors.transparent,
-              ]),
-            ),
-          ),
-
-          // Header (mês + legendas)
           Row(
             children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
-                decoration: BoxDecoration(
-                  gradient:
-                      const LinearGradient(colors: [_ciano, Color(0xFF448AFF)]),
-                  borderRadius: BorderRadius.circular(26),
-                  boxShadow: [
-                    BoxShadow(
-                        color: _ciano.withValues(alpha: 0.5), blurRadius: 16)
-                  ],
-                ),
-                child: Text(
-                  DateFormat('MMMM  yyyy', 'pt_BR').format(_hoje).toUpperCase(),
-                  style: GoogleFonts.poppins(
-                      color: Colors.black,
-                      fontSize: r.fs(17),
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.2),
-                ),
-              ),
+              Text(_capitalizar(DateFormat('MMMM yyyy', 'pt_BR').format(_hoje)),
+                  style: t.subtitulo()),
               const Spacer(),
-              _legenda(_verde, 'Evento', r, fontSize: r.fs(14)),
-              const SizedBox(width: 12),
-              _legenda(_amarelo, 'Tarefa', r, fontSize: r.fs(14)),
-              const SizedBox(width: 12),
-              _legenda(_vermelho, 'Atrasado', r, fontSize: r.fs(14)),
+              _legenda(_corEvento, 'Evento', r),
+              SizedBox(width: r.sp(14)),
+              _legenda(_corTarefa, 'Tarefa', r),
+              SizedBox(width: r.sp(14)),
+              _legenda(_corAtraso, 'Atrasada', r),
             ],
           ),
-          const SizedBox(height: 10),
-
-          // Calendário
+          SizedBox(height: r.sp(8)),
           Expanded(
-            child: TableCalendar(
-              locale: 'pt_BR',
-              focusedDay: _diaSelecionado ?? _hoje,
-              firstDay: DateTime.utc(2020),
-              lastDay: DateTime.utc(2035),
-              rowHeight: r.isCompact ? 52 : 66,
-              daysOfWeekHeight: r.isCompact ? 32 : 40,
-              headerVisible: false,
-              selectedDayPredicate: (d) =>
-                  _diaSelecionado != null &&
-                  _chave(d) == _chave(_diaSelecionado!),
-              onDaySelected: (sel, _) => _tocarNoDia(sel),
-              eventLoader: (d) => _itensPorDia[_chave(d)] ?? [],
-              daysOfWeekStyle: DaysOfWeekStyle(
-                weekdayStyle: GoogleFonts.poppins(
-                    color: Colors.white70,
-                    fontSize: r.fs(14),
-                    fontWeight: FontWeight.w700),
-                weekendStyle: GoogleFonts.poppins(
-                    color: _rosa.withValues(alpha: 0.9),
-                    fontSize: r.fs(14),
-                    fontWeight: FontWeight.w700),
-              ),
-              calendarStyle: CalendarStyle(
-                outsideDaysVisible: false,
-                defaultTextStyle: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: r.fs(17),
-                    fontWeight: FontWeight.w600),
-                weekendTextStyle: GoogleFonts.poppins(
-                    color: Colors.white70,
-                    fontSize: r.fs(17),
-                    fontWeight: FontWeight.w600),
-                todayDecoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                      colors: [_ciano, Color(0xFF448AFF)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                        color: _ciano.withValues(alpha: 0.65),
-                        blurRadius: 18,
-                        spreadRadius: 2)
-                  ],
+            child: LayoutBuilder(
+              builder: (context, box) => TableCalendar(
+                locale: 'pt_BR',
+                focusedDay: _diaSelecionado ?? _hoje,
+                firstDay: DateTime.utc(2020),
+                lastDay: DateTime.utc(2035),
+                shouldFillViewport: true,
+                daysOfWeekHeight: r.sp(32),
+                headerVisible: false,
+                availableGestures: AvailableGestures.none,
+                selectedDayPredicate: (d) =>
+                    _diaSelecionado != null && _chave(d) == _chave(_diaSelecionado!),
+                onDaySelected: (sel, _) => _tocarNoDia(sel),
+                eventLoader: (d) => _itensPorDia[_chave(d)] ?? [],
+                daysOfWeekStyle: DaysOfWeekStyle(
+                  weekdayStyle: t.legenda(),
+                  weekendStyle: t.legenda(),
                 ),
-                todayTextStyle: GoogleFonts.poppins(
-                    color: Colors.black,
-                    fontSize: r.fs(17),
-                    fontWeight: FontWeight.w900),
-                selectedDecoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.white, width: 2),
+                calendarStyle: const CalendarStyle(
+                  outsideDaysVisible: false,
+                  markersMaxCount: 0,
                 ),
-                selectedTextStyle: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: r.fs(17),
-                    fontWeight: FontWeight.w800),
-                markersMaxCount: 0,
+                calendarBuilders: CalendarBuilders(
+                  defaultBuilder: (_, d, __) => _diaCell(d, false, false, r),
+                  todayBuilder: (_, d, __) => _diaCell(d, true, false, r),
+                  selectedBuilder: (_, d, __) => _diaCell(d, _chave(d) == _chave(_hoje), true, r),
+                ),
               ),
-              calendarBuilders: CalendarBuilders(
-                defaultBuilder: (_, d, __) => _diaCell(d, false, false, r),
-                todayBuilder: (_, d, __) => _diaCell(d, true, false, r),
-                selectedBuilder: (_, d, __) => _diaCell(d, false, true, r),
-                markerBuilder: (_, day, __) {
-                  final itens = _itensPorDia[_chave(day)] ?? [];
-                  if (itens.isEmpty) return const SizedBox.shrink();
-                  final temEv = itens.any((i) => i.tipo == TipoItem.evento);
-                  final temTa = itens
-                      .any((i) => i.tipo == TipoItem.tarefa && !i.concluido);
-                  final atr = _temTarefaAtrasada(day);
-                  return Positioned(
-                    bottom: 4,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (temEv) _dot(_verde, 9),
-                        if (temEv && (temTa || atr)) const SizedBox(width: 4),
-                        if (temTa && !atr) _dot(_amarelo, 9),
-                        if (atr) _dot(_vermelho, 9),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.touch_app_rounded,
-                    size: 13, color: Colors.white38),
-                const SizedBox(width: 6),
-                Text(
-                    _atualizadoEm != null
-                        ? 'Toque num dia para ver detalhes  •  atualizado ${descreverIdade(_atualizadoEm!)}'
-                        : 'Toque num dia para ver detalhes',
-                    style: GoogleFonts.poppins(
-                        color: Colors.white38, fontSize: 12)),
-              ],
             ),
           ),
         ],
@@ -789,638 +521,195 @@ class _TelaCalendarioState extends State<TelaCalendario>
     );
   }
 
+  String _capitalizar(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
   Widget _diaCell(DateTime day, bool isHoje, bool isSel, R r) {
+    final t = Tipo(r);
+    final itens = _itensPorDia[_chave(day)] ?? const <ItemAgenda>[];
+    final temEvento = itens.any((i) => i.tipo == TipoItem.evento && !i.aniversario);
+    final temTarefa = itens.any((i) => i.tipo == TipoItem.tarefa && !i.concluido);
+    final temAniversario = itens.any((i) => i.aniversario);
     final atrasado = _temTarefaAtrasada(day);
-    final sel = isSel ||
-        (_diaSelecionado != null && _chave(day) == _chave(_diaSelecionado!));
-
-    BoxDecoration? deco;
-    Color tc = Colors.white;
-    FontWeight fw = FontWeight.w600;
-
-    if (isHoje) {
-      deco = BoxDecoration(
-        gradient: const LinearGradient(
-            colors: [_ciano, Color(0xFF448AFF)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight),
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-              color: _ciano.withValues(alpha: 0.65),
-              blurRadius: 18,
-              spreadRadius: 2)
-        ],
-      );
-      tc = Colors.black;
-      fw = FontWeight.w900;
-    } else if (atrasado) {
-      deco = BoxDecoration(
-        color: _vermelho.withValues(alpha: 0.22),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _vermelho.withValues(alpha: 0.7), width: 1.5),
-      );
-      tc = _vermelho;
-      fw = FontWeight.w800;
-    } else if (sel) {
-      deco = BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white, width: 2),
-      );
-      fw = FontWeight.w800;
-    }
 
     return Container(
-      margin: const EdgeInsets.all(3),
-      decoration: deco,
-      child: Center(
-          child: Text('${day.day}',
-              style: GoogleFonts.poppins(
-                  color: tc, fontSize: r.fs(17), fontWeight: fw))),
+      margin: EdgeInsets.all(r.sp(3)),
+      decoration: BoxDecoration(
+        color: isHoje ? _corEvento : null,
+        borderRadius: BorderRadius.circular(r.sp(14)),
+        border: isSel && !isHoje ? Border.all(color: Cores.texto, width: 2) : null,
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('${day.day}',
+              style: t.corpo(
+                cor: isHoje ? Colors.black : (atrasado ? _corAtraso : Cores.texto),
+                peso: isHoje ? FontWeight.w800 : FontWeight.w500,
+              )),
+          SizedBox(height: r.sp(2)),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (temEvento) _ponto(isHoje ? Colors.black : _corEvento, r),
+              if (temTarefa && !atrasado) _ponto(isHoje ? Colors.black : _corTarefa, r),
+              if (atrasado) _ponto(_corAtraso, r),
+              if (temAniversario) _ponto(isHoje ? Colors.black : _corAniversario, r),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _ponto(Color cor, R r) => Container(
+        width: r.sp(6),
+        height: r.sp(6),
+        margin: EdgeInsets.symmetric(horizontal: r.sp(1.5)),
+        decoration: BoxDecoration(shape: BoxShape.circle, color: cor),
+      );
+
+  Widget _legenda(Color cor, String texto, R r) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ponto(cor, r),
+          SizedBox(width: r.sp(6)),
+          Text(texto, style: Tipo(r).legenda()),
+        ],
+      );
+
+  // ── LISTAS HOJE / AMANHÃ ──────────────────────────────────────────────────
+  Widget _buildLista({
+    required String titulo,
+    required List<ItemAgenda> itens,
+    required ScrollController ctrl,
+    required R r,
+  }) {
+    final t = Tipo(r);
+    final pend = itens.where((i) => !i.concluido).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Text(titulo, style: t.subtitulo()),
+          SizedBox(width: r.sp(10)),
+          if (pend.isNotEmpty)
+            Text(pend.length == 1 ? '1 item' : '${pend.length} itens', style: t.apoio()),
+        ]),
+        SizedBox(height: r.sp(10)),
+        Expanded(
+          child: pend.isEmpty
+              ? Align(
+                  alignment: Alignment.topLeft,
+                  child: Text('Nada marcado.', style: t.apoio()),
+                )
+              : ListView.builder(
+                  controller: ctrl,
+                  padding: EdgeInsets.zero,
+                  itemCount: pend.length,
+                  itemBuilder: (_, i) => _itemLinha(pend[i], r),
+                ),
+        ),
+      ],
     );
   }
 
   // ── PAINEL DO DIA SELECIONADO ─────────────────────────────────────────────
   Widget _buildPainelDia(DateTime dia, R r) {
+    final t = Tipo(r);
     final itens = _sort(_itensPorDia[_chave(dia)] ?? []);
     final pend = itens.where((i) => !i.concluido).toList();
     final conc = itens.where((i) => i.concluido).toList();
-    final isPassado = _chave(dia).isBefore(_chave(_hoje));
-    final isHoje = _chave(dia) == _chave(_hoje);
-    final cor = isPassado && pend.isNotEmpty
-        ? _vermelho
-        : isHoje
-            ? _verde
-            : _ciano;
-
-    return _card(
-      gradient: LinearGradient(colors: [
-        cor.withValues(alpha: 0.2),
-        Colors.white.withValues(alpha: 0.05)
-      ], begin: Alignment.topLeft, end: Alignment.bottomRight),
-      padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          _painelHeader(dia, cor, pend.length, isPassado, r),
+    final atrasado = _chave(dia).isBefore(_chave(_hoje)) && pend.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
           Expanded(
-            child: itens.isEmpty
-                ? Center(
-                    child: Text('Nenhum item',
-                        style: GoogleFonts.poppins(
-                            color: Colors.white38, fontSize: 16)))
-                : ListView(
-                    controller: _scrollDia,
-                    padding: const EdgeInsets.all(14),
-                    children: [
-                      if (pend.isNotEmpty) ...[
-                        _secao('PENDENTES', cor, r),
-                        ...pend.map((i) => _itemCard(i, cor, r)),
-                      ],
-                      if (conc.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        _secao('CONCLUÍDOS', Colors.white38, r),
-                        ...conc.map((i) => _itemCard(i, Colors.white38, r)),
-                      ],
-                    ],
-                  ),
+            child: Text(_capitalizar(DateFormat("EEEE, d 'de' MMMM", 'pt_BR').format(dia)),
+                style: t.subtitulo(cor: atrasado ? _corAtraso : Cores.texto)),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _painelHeader(
-      DateTime dia, Color cor, int numPend, bool isPassado, R r) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(18, 14, 14, 13),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-            colors: [cor.withValues(alpha: 0.28), Colors.transparent],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        border: Border(bottom: BorderSide(color: cor.withValues(alpha: 0.3))),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 5,
-            height: 24,
-            decoration: BoxDecoration(
-              color: cor,
-              borderRadius: BorderRadius.circular(3),
-              boxShadow: [
-                BoxShadow(color: cor.withValues(alpha: 0.8), blurRadius: 12)
+          IconButton(
+            onPressed: _fecharPainelDia,
+            icon: Icon(Icons.close_rounded, color: Cores.textoSecundario, size: r.icon(28)),
+          ),
+        ]),
+        if (atrasado)
+          Text('${pend.length} tarefa(s) atrasada(s)', style: t.apoio(cor: _corAtraso)),
+        SizedBox(height: r.sp(10)),
+        Expanded(
+          child: ListView(
+            controller: _scrollDia,
+            padding: EdgeInsets.zero,
+            children: [
+              ...pend.map((i) => _itemLinha(i, r)),
+              if (conc.isNotEmpty) ...[
+                SizedBox(height: r.sp(12)),
+                Text('Concluídos', style: t.legenda()),
+                SizedBox(height: r.sp(6)),
+                ...conc.map((i) => _itemLinha(i, r)),
               ],
-            ),
+            ],
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  DateFormat("dd 'de' MMMM", 'pt_BR').format(dia).toUpperCase(),
-                  style: GoogleFonts.poppins(
-                      color: cor,
-                      fontSize: r.fs(16),
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.8),
-                ),
-                if (isPassado && numPend > 0)
-                  Text('⚠️ $numPend tarefa(s) atrasada(s)',
-                      style: GoogleFonts.poppins(
-                          color: _vermelho.withValues(alpha: 0.9),
-                          fontSize: 12)),
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: _fecharPainelDia,
-            child: Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.1),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-              ),
-              child: Icon(Icons.close_rounded,
-                  color: Colors.white70, size: r.icon(17)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── LISTA HOJE / AMANHÃ ───────────────────────────────────────────────────
-  Widget _buildLista({
-    required String titulo,
-    required String subtitulo,
-    required List<ItemAgenda> itens,
-    required Color cor,
-    required ScrollController ctrl,
-    required R r,
-  }) {
-    final pend = itens.where((i) => !i.concluido).toList();
-
-    return _card(
-      gradient: LinearGradient(colors: [
-        cor.withValues(alpha: 0.18),
-        Colors.white.withValues(alpha: 0.05)
-      ], begin: Alignment.topLeft, end: Alignment.bottomRight),
-      padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                  colors: [cor.withValues(alpha: 0.28), Colors.transparent],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(20)),
-              border: Border(
-                  bottom: BorderSide(color: cor.withValues(alpha: 0.28))),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 5,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: cor,
-                    borderRadius: BorderRadius.circular(3),
-                    boxShadow: [
-                      BoxShadow(
-                          color: cor.withValues(alpha: 0.8), blurRadius: 10)
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(titulo,
-                          style: GoogleFonts.poppins(
-                              color: cor,
-                              fontSize: r.fs(18),
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1)),
-                      Text(subtitulo,
-                          style: GoogleFonts.poppins(
-                              color: Colors.white54, fontSize: 12)),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: cor.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: cor.withValues(alpha: 0.5)),
-                    boxShadow: [
-                      BoxShadow(
-                          color: cor.withValues(alpha: 0.3), blurRadius: 8)
-                    ],
-                  ),
-                  child: Text('${pend.length}',
-                      style: GoogleFonts.poppins(
-                          color: cor,
-                          fontSize: r.fs(17),
-                          fontWeight: FontWeight.w900)),
-                ),
-              ],
-            ),
-          ),
-          // Itens
-          Expanded(
-            child: pend.isEmpty
-                ? Center(
-                    child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.check_circle_rounded,
-                          color: cor.withValues(alpha: 0.4), size: r.icon(44)),
-                      const SizedBox(height: 8),
-                      Text('Nada pendente',
-                          style: GoogleFonts.poppins(
-                              color: Colors.white38, fontSize: 15)),
-                    ],
-                  ))
-                : ListView.builder(
-                    controller: ctrl,
-                    padding: const EdgeInsets.all(12),
-                    itemCount: pend.length,
-                    itemBuilder: (_, i) => _itemCard(pend[i], cor, r),
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── CARD DE ITEM — FONTE GRANDE E VISÍVEL ─────────────────────────────────
-  Widget _itemCard(ItemAgenda item, Color corTema, R r) {
-    final isEv = item.tipo == TipoItem.evento;
-    final marc = _marcando.contains(item.id);
-    final conc = item.concluido;
-    final corItem = isEv ? _verde : _amarelo;
-
-    return GestureDetector(
-      onTap: isEv ? null : () => _alternarTarefa(item),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        margin: const EdgeInsets.only(bottom: 9),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: conc
-              ? Colors.white.withValues(alpha: 0.03)
-              : Colors.white.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: conc
-                ? Colors.white.withValues(alpha: 0.07)
-                : corItem.withValues(alpha: 0.50),
-            width: conc ? 1 : 1.5,
-          ),
-          boxShadow: conc
-              ? null
-              : [
-                  BoxShadow(
-                      color: corItem.withValues(alpha: 0.12),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3))
-                ],
         ),
-        child: Row(
-          children: [
-            // Checkbox ou ícone evento
-            if (!isEv)
-              GestureDetector(
-                onTap: () => _alternarTarefa(item),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 30,
-                  height: 30,
-                  margin: const EdgeInsets.only(right: 12),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: conc
-                        ? _verde.withValues(alpha: 0.2)
-                        : Colors.transparent,
-                    border: Border.all(
-                      color:
-                          conc ? _verde : Colors.white.withValues(alpha: 0.4),
-                      width: 2,
-                    ),
-                    boxShadow: conc
-                        ? [
-                            BoxShadow(
-                                color: _verde.withValues(alpha: 0.4),
-                                blurRadius: 8)
-                          ]
-                        : null,
-                  ),
-                  child: marc
-                      ? Padding(
-                          padding: const EdgeInsets.all(5),
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: _verde.withValues(alpha: 0.8)))
-                      : conc
-                          ? Icon(Icons.check_rounded,
-                              color: _verde, size: r.icon(16))
-                          : null,
-                ),
-              )
-            else
-              Container(
-                width: 30,
-                height: 30,
-                margin: const EdgeInsets.only(right: 12),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _verde.withValues(alpha: 0.12),
-                  border: Border.all(color: _verde.withValues(alpha: 0.4)),
-                ),
-                child:
-                    Icon(Icons.event_rounded, color: _verde, size: r.icon(16)),
-              ),
+      ],
+    );
+  }
 
-            // Texto — GRANDE e legível de longe
+  /// Uma linha de compromisso. Tarefas: tocar marca/desmarca.
+  Widget _itemLinha(ItemAgenda item, R r) {
+    final t = Tipo(r);
+    final isEv = item.tipo == TipoItem.evento;
+    final cor = item.aniversario ? _corAniversario : (isEv ? _corEvento : _corTarefa);
+    final marcando = _marcando.contains(item.id);
+    final icone = item.aniversario
+        ? Icons.cake_rounded
+        : isEv
+            ? Icons.event_rounded
+            : (item.concluido ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: isEv ? null : () => _alternarTarefa(item),
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: r.sp(8)),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: r.sp(36),
+              child: marcando
+                  ? SizedBox(
+                      width: r.icon(24),
+                      height: r.icon(24),
+                      child: CircularProgressIndicator(strokeWidth: 2, color: cor))
+                  : Icon(icone, color: item.concluido ? Cores.textoApagado : cor, size: r.icon(26)),
+            ),
+            SizedBox(width: r.sp(8)),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(item.titulo,
-                      style: GoogleFonts.poppins(
-                        color: conc
-                            ? Colors.white.withValues(alpha: 0.35)
-                            : Colors.white,
-                        fontSize: r.fs(18), // fonte grande
-                        fontWeight: FontWeight.w700,
-                        decoration: conc ? TextDecoration.lineThrough : null,
-                        decorationColor: Colors.white.withValues(alpha: 0.3),
-                        shadows: conc
-                            ? null
-                            : [
-                                Shadow(
-                                    color: corItem.withValues(alpha: 0.3),
-                                    blurRadius: 8)
-                              ],
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
-                  if (item.horario != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 3),
-                      child: Row(children: [
-                        Icon(Icons.schedule_rounded,
-                            size: 14, color: corItem.withValues(alpha: 0.7)),
-                        const SizedBox(width: 4),
-                        Text(item.horario!,
-                            style: GoogleFonts.poppins(
-                                color: corItem.withValues(alpha: 0.9),
-                                fontSize: r.fs(14),
-                                fontWeight: FontWeight.w700)),
-                      ]),
+                  Text(
+                    item.titulo,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: t.corpo(
+                      cor: item.concluido ? Cores.textoApagado : Cores.texto,
+                      peso: FontWeight.w600,
+                    ).copyWith(
+                        decoration: item.concluido ? TextDecoration.lineThrough : null,
+                        decorationColor: Cores.textoApagado),
+                  ),
+                  if (item.horario != null || item.semData)
+                    Text(
+                      item.horario ?? 'Sem data definida',
+                      style: t.apoio(cor: item.horario != null ? cor : Cores.textoApagado),
                     ),
                 ],
               ),
             ),
-
-            // Badge tipo
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: corItem.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: corItem.withValues(alpha: 0.4)),
-              ),
-              child: Text(isEv ? 'EVENTO' : (item.semData ? 'SEM DATA' : 'TAREFA'),
-                  style: GoogleFonts.poppins(
-                      color: corItem,
-                      fontSize: r.fs(10),
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.8)),
-            ),
           ],
         ),
       ),
     );
   }
-
-  // ── HELPERS ───────────────────────────────────────────────────────────────
-  Widget _secao(String texto, Color cor, R r) => Padding(
-        padding: const EdgeInsets.only(bottom: 8, left: 2),
-        child: Text(texto,
-            style: GoogleFonts.poppins(
-                color: cor,
-                fontSize: r.fs(11),
-                fontWeight: FontWeight.w800,
-                letterSpacing: 2)),
-      );
-
-  Widget _card({
-    required Widget child,
-    Gradient? gradient,
-    EdgeInsets padding = const EdgeInsets.all(14),
-  }) {
-    // Sem BackdropFilter: o fundo é animado, então o desfoque seria
-    // recalculado a cada quadro (3 cards = 3 blurs por quadro). Um fundo
-    // escuro translúcido dá um efeito muito parecido a custo quase zero.
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFF0B0F24).withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: Container(
-        width: double.infinity,
-        padding: padding,
-        decoration: BoxDecoration(
-          gradient: gradient,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-        ),
-        child: child,
-      ),
-    );
-  }
-
-  Widget _dot(Color cor, double size) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: cor,
-          boxShadow: [
-            BoxShadow(color: cor.withValues(alpha: 0.8), blurRadius: 6)
-          ],
-        ),
-      );
-
-  Widget _legenda(Color cor, String label, R r, {double? fontSize}) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _dot(cor, fontSize != null ? fontSize * 0.75 : 10),
-          const SizedBox(width: 5),
-          Text(label,
-              style: GoogleFonts.poppins(
-                  color: Colors.white70,
-                  fontSize: fontSize ?? r.fs(12),
-                  fontWeight: FontWeight.w600)),
-        ],
-      );
-}
-
-// ─── ÍCONE GOOGLE CALENDAR ────────────────────────────────────────────────────
-Widget _googleCalIcon(double size) {
-  return ClipRRect(
-    borderRadius: BorderRadius.circular(size * 0.18),
-    child: SizedBox(
-      width: size,
-      height: size,
-      child: Stack(
-        children: [
-          // Fundo branco
-          Container(color: Colors.white),
-          // Quadrante sup-esq: azul
-          Positioned(
-            left: 0,
-            top: 0,
-            child: Container(
-                width: size * 0.5,
-                height: size * 0.5,
-                color: const Color(0xFF4285F4)),
-          ),
-          // Quadrante sup-dir: amarelo
-          Positioned(
-            right: 0,
-            top: 0,
-            child: Container(
-                width: size * 0.5,
-                height: size * 0.5,
-                color: const Color(0xFFFBBC04)),
-          ),
-          // Quadrante inf-esq: verde
-          Positioned(
-            left: 0,
-            bottom: 0,
-            child: Container(
-                width: size * 0.5,
-                height: size * 0.5,
-                color: const Color(0xFF34A853)),
-          ),
-          // Quadrante inf-dir: vermelho
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-                width: size * 0.5,
-                height: size * 0.5,
-                color: const Color(0xFFEA4335)),
-          ),
-          // Número "31" centralizado
-          Center(
-            child: Text(
-              '31',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: size * 0.40,
-                fontWeight: FontWeight.w900,
-                height: 1,
-              ),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-// ─── AURORA BOREAL ────────────────────────────────────────────────────────────
-class _AuroraPainter extends CustomPainter {
-  final Animation<double> anim;
-  _AuroraPainter(this.anim) : super(repaint: anim);
-
-  @override
-  void paint(Canvas canvas, Size s) {
-    final t = anim.value;
-    final bg = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0xFF0D0221), Color(0xFF0A1045), Color(0xFF050818)],
-      ).createShader(Rect.fromLTWH(0, 0, s.width, s.height));
-    canvas.drawRect(Rect.fromLTWH(0, 0, s.width, s.height), bg);
-
-    final p = Paint()..style = PaintingStyle.fill;
-    _w(
-        canvas,
-        s,
-        p,
-        const Color(0xFF00E676),
-        0.16,
-        s.height * (0.12 + math.sin(t * math.pi) * 0.07),
-        s.height * 0.20,
-        0.6,
-        t * math.pi);
-    _w(
-        canvas,
-        s,
-        p,
-        const Color(0xFF18FFFF),
-        0.13,
-        s.height * (0.22 + math.cos(t * math.pi * 0.7) * 0.05),
-        s.height * 0.24,
-        0.5,
-        t * math.pi * 1.3 + 1.0);
-    _w(
-        canvas,
-        s,
-        p,
-        const Color(0xFFE040FB),
-        0.11,
-        s.height * (0.32 + math.sin(t * math.pi * 1.2) * 0.06),
-        s.height * 0.22,
-        0.4,
-        t * math.pi * 0.9 + 2.1);
-    _w(
-        canvas,
-        s,
-        p,
-        const Color(0xFF448AFF),
-        0.14,
-        s.height * (0.42 + math.cos(t * math.pi * 0.8) * 0.04),
-        s.height * 0.26,
-        0.55,
-        t * math.pi * 1.1 + 0.5);
-  }
-
-  void _w(Canvas c, Size s, Paint p, Color cor, double op, double yO,
-      double amp, double freq, double phase) {
-    final path = Path()..moveTo(0, s.height);
-    for (double x = 0; x <= s.width; x += 2) {
-      path.lineTo(
-          x, yO + amp * math.sin(freq * (x / s.width) * 2 * math.pi + phase));
-    }
-    path.lineTo(s.width, s.height);
-    path.close();
-    p.shader = LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [cor.withValues(alpha: op), cor.withValues(alpha: op * 0.2)],
-    ).createShader(Rect.fromLTWH(0, yO - amp, s.width, amp * 2 + s.height));
-    c.drawPath(path, p);
-  }
-
-  @override
-  bool shouldRepaint(_AuroraPainter old) => old.anim != anim;
 }

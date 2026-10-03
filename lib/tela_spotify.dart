@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
-import 'dart:ui';
 import 'package:crypto/crypto.dart';
 
 import 'package:flutter/material.dart';
@@ -13,7 +12,9 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import 'config_manager.dart';
 import 'info_hub.dart';
-import 'performance_manager.dart';
+import 'design/tema.dart';
+import 'responsive.dart';
+import 'services/musica_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  SpotifyTrack
@@ -524,6 +525,30 @@ class SpotifyManager extends ChangeNotifier {
     }
   }
 
+  /// Próxima música da fila ("Título, de Artista"), ou null.
+  Future<String?> proximaNaFila() async {
+    if (_accessToken.isEmpty) return null;
+    try {
+      final res = await http.get(
+        Uri.parse('https://api.spotify.com/v1/me/player/queue'),
+        headers: {'Authorization': 'Bearer $_accessToken'},
+      ).timeout(const Duration(seconds: 6));
+      if (res.statusCode != 200) return null;
+      final fila = (jsonDecode(res.body)['queue'] as List?) ?? [];
+      if (fila.isEmpty) return null;
+      final p = fila.first as Map<String, dynamic>;
+      final artistas = ((p['artists'] as List?) ?? [])
+          .map((a) => (a as Map)['name'] as String? ?? '')
+          .where((s) => s.isNotEmpty)
+          .join(', ');
+      final nome = p['name'] as String? ?? '';
+      if (nome.isEmpty) return null;
+      return artistas.isEmpty ? nome : '$nome, de $artistas';
+    } catch (_) {
+      return null;
+    }
+  }
+
   int get progressoAtualMs => _progressoLocal;
   String get accessToken => _accessToken; // para InfoMusicaManager
 
@@ -593,64 +618,30 @@ class TelaSpotify extends StatefulWidget {
   State<TelaSpotify> createState() => _TelaSpotifyState();
 }
 
-class _TelaSpotifyState extends State<TelaSpotify>
-    with TickerProviderStateMixin {
+class _TelaSpotifyState extends State<TelaSpotify> {
   final _spotify = SpotifyManager.instance;
   final _cfg = ConfigManager();
 
-  late AnimationController _entradaCtrl;
-  late AnimationController _pulseCtrl;
-  late AnimationController _vizCtrl; // visualizador de áudio
-  late Animation<double> _fadeIn;
-  late Animation<double> _pulse;
-  late Animation<double> _vizAnim; // fase das ondas
-
   Timer? _saidaTimer;
-  int _infoCardIndex = 0; // card atual do painel de infos
-  Timer? _infoCardTimer; // rotação automática dos cards
+
+  // Dados extras da faixa atual
+  String? _faixaId;
+  Letra? _letra;
+  bool _buscandoLetra = false;
+  Color? _corCapa;
+  Uint8List? _bytesCor;
+  String? _proxima;
 
   @override
   void initState() {
     super.initState();
-    _entradaCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 700));
-    _fadeIn = CurvedAnimation(parent: _entradaCtrl, curve: Curves.easeOut);
-    _pulseCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1000));
-    _pulse = Tween(begin: 1.0, end: 1.06)
-        .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
-    _vizCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1800));
-    _vizAnim = Tween(begin: 0.0, end: 1.0).animate(_vizCtrl);
-    // Pulso do álbum e visualizador de áudio são decorativos — só rodam
-    // em loop no modo visual completo. No modo econômico ficam parados.
-    if (!PerformanceManager.instance.modoEconomico) {
-      _pulseCtrl.repeat(reverse: true);
-      _vizCtrl.repeat();
-    }
-    _entradaCtrl.forward();
     _spotify.addListener(_onUpdate);
     _iniciarTimerSaida();
-    // Busca informações da faixa atual se já houver uma tocando
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final faixa = _spotify.faixaAtual;
-      if (faixa != null && InfoMusicaManager.instance.info == null) {
-        InfoMusicaManager.instance.buscarInfo(faixa).then((_) {
-          if (mounted) {
-            setState(() {});
-            _iniciarRotacaoCards();
-          }
-        });
-      }
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onUpdate());
   }
 
   @override
   void dispose() {
-    _entradaCtrl.dispose();
-    _pulseCtrl.dispose();
-    _vizCtrl.dispose();
-    _infoCardTimer?.cancel();
     _saidaTimer?.cancel();
     _spotify.removeListener(_onUpdate);
     super.dispose();
@@ -658,37 +649,42 @@ class _TelaSpotifyState extends State<TelaSpotify>
 
   void _onUpdate() {
     if (!mounted) return;
-    setState(() {});
-    // Inicia rotação se info acabou de chegar
-    if (InfoMusicaManager.instance.info != null && _infoCardTimer == null) {
-      _iniciarRotacaoCards();
+    final faixa = _spotify.faixaAtual;
+    if (faixa != null && faixa.id != _faixaId) {
+      _faixaId = faixa.id;
+      _letra = null;
+      _proxima = null;
+      _carregarExtras(faixa);
     }
+    final bytes = _spotify.albumArtBytes;
+    if (bytes != null && !identical(bytes, _bytesCor)) {
+      _bytesCor = bytes;
+      MusicaService.corDaCapa(bytes).then((c) {
+        if (mounted && c != null) setState(() => _corCapa = c);
+      });
+    }
+    setState(() {});
   }
 
-  void _iniciarRotacaoCards() {
-    _infoCardTimer?.cancel();
-    _infoCardIndex = 0;
-    final info = InfoMusicaManager.instance.info;
-    if (info == null) return;
-    _infoCardTimer = Timer.periodic(const Duration(seconds: 6), (_) {
-      if (!mounted) return;
-      final total = _totalCards();
-      setState(() => _infoCardIndex = (_infoCardIndex + 1) % total);
+  Future<void> _carregarExtras(SpotifyTrack faixa) async {
+    _buscandoLetra = true;
+    final letra = await MusicaService.instance.letra(
+      id: faixa.id,
+      titulo: faixa.titulo,
+      artista: faixa.artista,
+      album: faixa.album,
+      duracaoMs: faixa.duracaoMs,
+    );
+    final proxima = await _spotify.proximaNaFila();
+    if (InfoMusicaManager.instance.info == null) {
+      unawaited(InfoMusicaManager.instance.buscarInfo(faixa));
+    }
+    if (!mounted || faixa.id != _faixaId) return;
+    setState(() {
+      _letra = letra;
+      _proxima = proxima;
+      _buscandoLetra = false;
     });
-  }
-
-  int _totalCards() {
-    final info = InfoMusicaManager.instance.info;
-    if (info == null) return 1;
-    int t = 0;
-    if (info.releaseDate.isNotEmpty) t++;
-    t++; // popularidade sempre
-    t++; // genero sempre (com fallback)
-    if (info.gravadora.isNotEmpty) t++;
-    if (info.totalFaixas > 0) t++;
-    if (info.numMercados > 0) t++;
-    if (info.explicit) t++;
-    return t.clamp(1, 99);
   }
 
   void _iniciarTimerSaida() {
@@ -699,8 +695,6 @@ class _TelaSpotifyState extends State<TelaSpotify>
     });
   }
 
-  void _toqueInteragiu() => _iniciarTimerSaida();
-
   @override
   Widget build(BuildContext context) {
     if (_cfg.getString('spotify', 'client_id', '').isEmpty) {
@@ -709,673 +703,209 @@ class _TelaSpotifyState extends State<TelaSpotify>
     if (!_spotify.autenticado) return _telaLogin();
 
     final track = _spotify.faixaAtual;
-    final bytes = _spotify.albumArtBytes;
-    final sw = MediaQuery.of(context).size.width;
-    final sh = MediaQuery.of(context).size.height;
+    final r = R(context);
+    final cor = _corCapa ?? const Color(0xFF14361F);
 
-    return FadeTransition(
-      opacity: _fadeIn,
-      child: GestureDetector(
-        onTap: _toqueInteragiu,
-        child: Stack(fit: StackFit.expand, children: [
-          // Fundo: capa borrada (o blur sigma 90 é o efeito mais caro do
-          // app inteiro — no modo econômico usamos a imagem sem blur; o
-          // overlay escuro logo abaixo já cobre boa parte do detalhe).
-          if (bytes != null)
-            PerformanceManager.instance.modoEconomico
-                ? Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true)
-                : ImageFiltered(
-                    imageFilter: ImageFilter.blur(sigmaX: 90, sigmaY: 90),
-                    child: Image.memory(bytes,
-                        fit: BoxFit.cover, gaplessPlayback: true),
-                  )
-          else
-            Container(color: const Color(0xFF080808)),
-
-          // Overlay gradiente escuro
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [
-                  Colors.black.withValues(alpha: 0.72),
-                  Colors.black.withValues(alpha: 0.55),
-                  Colors.black.withValues(alpha: 0.68),
-                ],
-              ),
-            ),
+    return GestureDetector(
+      onTap: _iniciarTimerSaida,
+      child: AnimatedContainer(
+        duration: const Duration(seconds: 2),
+        // Fundo na cor da capa do álbum (antes: blur sigma 90, o efeito
+        // mais caro do app inteiro).
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [cor, Color.lerp(cor, Colors.black, 0.65)!],
           ),
-
-          // Visualizador de áudio animado no fundo
-          if (_spotify.faixaAtual != null)
-            Positioned.fill(
-              child: AnimatedBuilder(
-                animation: _vizAnim,
-                builder: (context, _) {
-                  final tocando = _spotify.faixaAtual?.tocando ?? false;
-                  return CustomPaint(
-                    painter: _AudioVisualizerPainter(
-                      fase: _vizAnim.value,
-                      tocando: tocando,
-                    ),
-                  );
-                },
+        ),
+        child: track == null
+            ? const AvisoTela(
+                icone: Icons.music_off_rounded,
+                titulo: 'Nenhuma música tocando',
+                texto: 'Toque algo no Spotify em qualquer aparelho e a música aparece aqui.',
+                cor: Destaques.musica,
+              )
+            : Padding(
+                padding: EdgeInsets.fromLTRB(r.sp(40), r.sp(28), r.sp(40), r.sp(24)),
+                child: Column(
+                  children: [
+                    Expanded(flex: 6, child: _topo(r, track)),
+                    SizedBox(height: r.sp(20)),
+                    Expanded(flex: 4, child: _painelLetra(r)),
+                  ],
+                ),
               ),
-            ),
-
-          // Conteúdo
-          Column(children: [
-            const SizedBox(height: 4),
-            Expanded(
-                child: track == null
-                    ? _semMusica()
-                    : _layoutPrincipal(track, bytes, sw, sh)),
-          ]),
-        ]),
       ),
     );
   }
 
-  Widget _semMusica() => Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.music_off_rounded, color: Colors.white24, size: 64),
-          const SizedBox(height: 16),
-          Text('Nenhuma música tocando',
-              style: GoogleFonts.poppins(
-                  color: Colors.white38,
-                  fontSize: 18,
-                  decoration: TextDecoration.none)),
-        ]),
-      );
-
-  Widget _layoutPrincipal(
-      SpotifyTrack track, Uint8List? bytes, double sw, double sh) {
-    final isPaused = !track.tocando;
+  Widget _topo(R r, SpotifyTrack track) {
+    final t = Tipo(r);
+    final bytes = _spotify.albumArtBytes;
     final posMs = _spotify.progressoAtualMs;
     final durMs = track.duracaoMs;
     final progresso = durMs > 0 ? (posMs / durMs).clamp(0.0, 1.0) : 0.0;
-    final capaSize = (sh * 0.60).clamp(160.0, 360.0);
+    final info = InfoMusicaManager.instance.info;
+    final detalhes = [
+      if (track.album.isNotEmpty) track.album,
+      if (info != null && info.releaseDate.isNotEmpty) info.releaseDate,
+      if (info != null && info.gravadora.isNotEmpty) info.gravadora,
+    ].join(', ');
 
-    return Column(children: [
-      // ── Capa + Infos lado a lado ──────────────────────────────────────────
-      Expanded(
-        flex: 58,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Capa grande à esquerda
-            SizedBox(
-              width: sw * 0.44,
-              child: Center(child: _capa(capaSize, bytes)),
-            ),
-
-            // Infos à direita com glassmorphism
-            Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(right: sw * 0.04, top: 12, bottom: 12),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(
-                      sigmaX: PerformanceManager.instance.sigmaBlur(20),
-                      sigmaY: PerformanceManager.instance.sigmaBlur(20),
-                    ),
-                    child: Container(
-                      padding: EdgeInsets.fromLTRB(
-                          sw * 0.025, sh * 0.018, sw * 0.025, sh * 0.015),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.15),
-                            width: 1),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Logo Spotify
-                          Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Icon(Icons.music_note_rounded,
-                                    color: const Color(0xFF1DB954),
-                                    size: (sw * 0.028).clamp(22.0, 32.0)),
-                                const SizedBox(width: 8),
-                                Text('Spotify',
-                                    style: GoogleFonts.poppins(
-                                        color: const Color(0xFF1DB954),
-                                        fontSize:
-                                            (sw * 0.020).clamp(14.0, 22.0),
-                                        fontWeight: FontWeight.w800,
-                                        decoration: TextDecoration.none)),
-                                const SizedBox(width: 6),
-                                Flexible(
-                                    child: Text('| by MlionDroid',
-                                        overflow: TextOverflow.ellipsis,
-                                        style: GoogleFonts.poppins(
-                                            color: Colors.white24,
-                                            fontSize:
-                                                (sw * 0.010).clamp(9.0, 12.0),
-                                            decoration: TextDecoration.none))),
-                              ]),
-                          SizedBox(height: sh * 0.015),
-                          Text(track.titulo,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.poppins(
-                                  color: Colors.white,
-                                  fontSize: (sw * 0.036).clamp(18.0, 34.0),
-                                  fontWeight: FontWeight.w800,
-                                  decoration: TextDecoration.none,
-                                  height: 1.1)),
-                          const SizedBox(height: 6),
-                          Text(track.artista,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.poppins(
-                                  color: Colors.white.withValues(alpha: 0.70),
-                                  fontSize: (sw * 0.022).clamp(13.0, 21.0),
-                                  decoration: TextDecoration.none)),
-                          if (track.album.isNotEmpty) ...[
-                            const SizedBox(height: 3),
-                            Text(track.album,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.poppins(
-                                    color: Colors.white.withValues(alpha: 0.38),
-                                    fontSize: (sw * 0.015).clamp(10.0, 15.0),
-                                    decoration: TextDecoration.none)),
-                          ],
-                          SizedBox(height: sh * 0.018),
-                          _barraProgresso(progresso, _t(posMs), _t(durMs), sw),
-                          SizedBox(height: sh * 0.022),
-                          _controles(sw, sh, isPaused),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-
-      // ── Informações da música (gravadora, popularidade, gêneros...)
-      Expanded(
-        flex: 42,
-        child: _painelInfoMusica(sw),
-      ),
-    ]);
-  }
-
-  Widget _capa(double size, Uint8List? bytes) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withValues(alpha: 0.85),
-              blurRadius: 55,
-              spreadRadius: 6,
-              offset: const Offset(0, 14)),
-          BoxShadow(
-              color: const Color(0xFF1DB954).withValues(alpha: 0.18),
-              blurRadius: 60,
-              spreadRadius: 8),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: bytes != null
-            ? Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true)
-            : Container(
-                color: const Color(0xFF1a1a2e),
-                child: const Icon(Icons.album_rounded,
-                    color: Colors.white24, size: 80)),
-      ),
-    );
-  }
-
-  Widget _barraProgresso(double progresso, String pos, String dur, double sw) {
-    return Column(children: [
-      SliderTheme(
-        data: SliderTheme.of(context).copyWith(
-          trackHeight: 3.5,
-          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-          overlayShape: SliderComponentShape.noOverlay,
-          activeTrackColor: Colors.white,
-          inactiveTrackColor: Colors.white.withValues(alpha: 0.18),
-          thumbColor: Colors.white,
-        ),
-        child: Slider(value: progresso.toDouble(), onChanged: null),
-      ),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        child:
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text(pos,
-              style: GoogleFonts.poppins(
-                  color: Colors.white38,
-                  fontSize: (sw * 0.012).clamp(9.0, 13.0),
-                  decoration: TextDecoration.none)),
-          Text(dur,
-              style: GoogleFonts.poppins(
-                  color: Colors.white38,
-                  fontSize: (sw * 0.012).clamp(9.0, 13.0),
-                  decoration: TextDecoration.none)),
-        ]),
-      ),
-    ]);
-  }
-
-  Widget _controles(double sw, double sh, bool isPaused) {
-    final btnSize = (sh * 0.088).clamp(34.0, 54.0);
-    final playSize = (sh * 0.128).clamp(50.0, 74.0);
-    return Row(children: [
-      _btn(Icons.skip_previous_rounded, btnSize, () {
-        _spotify.faixaAnterior();
-        _toqueInteragiu();
-      }),
-      SizedBox(width: sw * 0.025),
-      GestureDetector(
-        onTap: () {
-          _spotify.togglePlayPause();
-          _toqueInteragiu();
-        },
-        child: AnimatedBuilder(
-          animation: _pulse,
-          builder: (c, child) => Transform.scale(
-              scale: isPaused ? _pulse.value : 1.0, child: child),
-          child: Container(
-            width: playSize,
-            height: playSize,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.white.withValues(alpha: 0.28),
-                    blurRadius: 22,
-                    spreadRadius: 2)
-              ],
-            ),
-            child: Icon(
-                isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-                color: Colors.black,
-                size: playSize * 0.52),
-          ),
-        ),
-      ),
-      SizedBox(width: sw * 0.025),
-      _btn(Icons.skip_next_rounded, btnSize, () {
-        _spotify.proximaFaixa();
-        _toqueInteragiu();
-      }),
-    ]);
-  }
-
-  Widget _btn(IconData icon, double size, VoidCallback onTap) =>
-      GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: 0.10),
-            border: Border.all(
-                color: Colors.white.withValues(alpha: 0.22), width: 1.2),
-          ),
-          child: Icon(icon, color: Colors.white, size: size * 0.52),
-        ),
-      );
-
-  Widget _painelInfoMusica(double sw) {
-    final musica = InfoMusicaManager.instance;
-    final MusicInfo? info = musica.info;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: PerformanceManager.instance.sigmaBlur(18),
-            sigmaY: PerformanceManager.instance.sigmaBlur(18),
-          ),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.38),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-            ),
-            child: Column(children: [
-              // ── Header ────────────────────────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 9, 18, 4),
-                child: Row(children: [
-                  const Icon(Icons.auto_awesome_rounded,
-                      color: Color(0xFF1DB954), size: 14),
-                  const SizedBox(width: 7),
-                  Text('Sobre a musica',
-                      style: GoogleFonts.poppins(
-                          color: const Color(0xFF1DB954),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          decoration: TextDecoration.none)),
-                  const Spacer(),
-                  // Indicadores de cards (bolinhas)
-                  if (info != null)
-                    Row(
-                      children: List.generate(
-                          _totalCards(),
-                          (i) => Container(
-                                width: i == _infoCardIndex ? 16 : 6,
-                                height: 6,
-                                margin: const EdgeInsets.only(left: 3),
-                                decoration: BoxDecoration(
-                                  color: i == _infoCardIndex
-                                      ? const Color(0xFF1DB954)
-                                      : Colors.white.withValues(alpha: 0.25),
-                                  borderRadius: BorderRadius.circular(3),
-                                ),
-                              )),
-                    ),
-                  if (musica.carregando) ...[
-                    const SizedBox(width: 8),
-                    const SizedBox(
-                        width: 10,
-                        height: 10,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 1.5, color: Color(0xFF1DB954))),
-                  ],
-                ]),
-              ),
-
-              // ── Conteúdo do card ──────────────────────────────────────────
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
-                  child: info == null
-                      ? Center(
-                          child: Text(
-                            musica.carregando
-                                ? 'Buscando informações...'
-                                : 'Informações não encontradas',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.poppins(
-                                color: Colors.white30,
-                                fontSize: 13,
-                                decoration: TextDecoration.none),
-                          ),
-                        )
-                      : AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 600),
-                          transitionBuilder: (child, anim) => FadeTransition(
-                              opacity: anim,
-                              child: SlideTransition(
-                                position: Tween<Offset>(
-                                        begin: const Offset(0.08, 0),
-                                        end: Offset.zero)
-                                    .animate(anim),
-                                child: child,
-                              )),
-                          child: _buildCard(info, sw),
-                        ),
-                ),
-              ),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCard(MusicInfo info, double sw) {
-    final cards = <Map<String, dynamic>>[];
-
-    if (info.releaseDate.isNotEmpty) {
-      cards.add({
-        'emoji': '📅',
-        'icon': Icons.calendar_today_rounded,
-        'cor': const Color(0xFF00d4ff),
-        'label': 'Lançamento',
-        'valor': info.releaseDate,
-        'extra': 'Quando o mundo conheceu essa musica',
-        'tipo': 'texto',
-      });
-    }
-    if (info.popularidade >= 0) {
-      // sempre mostrar
-      final emoji = info.popularidade >= 80
-          ? '🔥'
-          : info.popularidade >= 60
-              ? '⭐'
-              : info.popularidade >= 40
-                  ? '🎵'
-                  : '💎';
-      cards.add({
-        'emoji': emoji,
-        'icon': Icons.trending_up_rounded,
-        'cor': const Color(0xFFFFD700),
-        'label': 'Popularidade no Spotify',
-        'valor': '${info.popularidade} / 100',
-        'barra': info.popularidade / 100.0,
-        'extra': _descPopularidade(info.popularidade),
-        'tipo': 'barra',
-      });
-    }
-    if (true) {
-      // sempre mostrar gênero (com fallback)
-      cards.add({
-        'emoji': '🎼',
-        'icon': Icons.queue_music_rounded,
-        'cor': const Color(0xFFE040FB),
-        'label': 'Estilo musical',
-        'valor': info.generos.isNotEmpty
-            ? info.generos.map((g) => _capitalizar(g)).join(' · ')
-            : 'Nao classificado pelo Spotify',
-        'extra': 'Genero identificado pelo Spotify',
-        'tipo': 'texto',
-      });
-    }
-    if (info.gravadora.isNotEmpty) {
-      cards.add({
-        'emoji': '🏢',
-        'icon': Icons.business_rounded,
-        'cor': const Color(0xFFFFD700),
-        'label': 'Gravadora',
-        'valor': info.gravadora,
-        'extra': 'Selo responsavel pelo lancamento',
-        'tipo': 'texto',
-      });
-    }
-    if (info.totalFaixas > 0) {
-      final trackInfo = info.trackNumber > 0
-          ? 'Faixa ${info.trackNumber} de ${info.totalFaixas}'
-          : '${info.totalFaixas} faixas no album';
-      cards.add({
-        'emoji': '💿',
-        'icon': Icons.album_rounded,
-        'cor': const Color(0xFF00d4ff),
-        'label': 'Sobre o album',
-        'valor': trackInfo,
-        'extra': info.albumType == 'album'
-            ? 'Album de estudio completo'
-            : info.albumType == 'single'
-                ? 'Lancado como single'
-                : 'EP ou colecao',
-        'tipo': 'texto',
-      });
-    }
-    if (info.numMercados > 0) {
-      final desc = info.numMercados >= 180
-          ? '🌍  Disponivel em praticamente todo o mundo'
-          : info.numMercados >= 100
-              ? '🌎  Ampla distribuicao internacional'
-              : '🌐  Distribuicao regional selecionada';
-      cards.add({
-        'emoji': '🌍',
-        'icon': Icons.public_rounded,
-        'cor': const Color(0xFF1DB954),
-        'label': 'Alcance global',
-        'valor': '${info.numMercados} paises',
-        'barra': (info.numMercados / 185).clamp(0.0, 1.0),
-        'extra': desc,
-        'tipo': 'barra',
-      });
-    }
-    if (info.explicit) {
-      cards.add({
-        'emoji': '🔞',
-        'icon': Icons.explicit_rounded,
-        'cor': const Color(0xFFFF6B6B),
-        'label': 'Classificacao',
-        'valor': 'Conteudo Explicito',
-        'extra': 'Esta musica contem linguagem adulta',
-        'tipo': 'texto',
-      });
-    }
-
-    if (cards.isEmpty) {
-      return Center(
-        key: const ValueKey('empty'),
-        child: Text('Carregando informacoes...',
-            style: GoogleFonts.poppins(
-                color: Colors.white30,
-                fontSize: 13,
-                decoration: TextDecoration.none)),
-      );
-    }
-
-    final idx = _infoCardIndex.clamp(0, cards.length - 1);
-    final card = cards[idx];
-    final cor = card['cor'] as Color;
-    final tipo = card['tipo'] as String;
-
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 500),
-      transitionBuilder: (child, anim) => FadeTransition(
-        opacity: anim,
-        child: SlideTransition(
-          position:
-              Tween<Offset>(begin: const Offset(0.06, 0), end: Offset.zero)
-                  .animate(anim),
-          child: child,
-        ),
-      ),
-      child: Row(
-        key: ValueKey(idx),
-        crossAxisAlignment: CrossAxisAlignment.center,
+    return LayoutBuilder(builder: (context, box) {
+      final capa = box.maxHeight;
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Emoji + Ícone grandes
-          Container(
-            width: (sw * 0.065).clamp(52.0, 72.0),
-            height: (sw * 0.065).clamp(52.0, 72.0),
-            margin: const EdgeInsets.only(right: 20),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(colors: [
-                cor.withValues(alpha: 0.25),
-                cor.withValues(alpha: 0.08),
-              ]),
-              border:
-                  Border.all(color: cor.withValues(alpha: 0.45), width: 1.5),
-              boxShadow: [
-                BoxShadow(
-                  color: cor.withValues(alpha: 0.20),
-                  blurRadius: 16,
-                  spreadRadius: 2,
-                )
-              ],
-            ),
-            child: Center(
-              child: Text(
-                card['emoji'] as String,
-                style: TextStyle(fontSize: (sw * 0.028).clamp(22.0, 32.0)),
-              ),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(r.sp(24)),
+            child: SizedBox(
+              width: capa,
+              height: capa,
+              child: bytes != null
+                  ? Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true)
+                  : ColoredBox(
+                      color: Cores.superficie,
+                      child: Icon(Icons.album_rounded, color: Cores.textoApagado, size: capa * 0.4),
+                    ),
             ),
           ),
-
-          // Conteúdo
+          SizedBox(width: r.sp(36)),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Label
-                Text(card['label'] as String,
-                    style: GoogleFonts.poppins(
-                        color: cor,
-                        fontSize: (sw * 0.013).clamp(10.0, 14.0),
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
-                        decoration: TextDecoration.none)),
-                const SizedBox(height: 5),
-
-                // Valor principal — grande e bold
-                Text(card['valor'] as String,
+                Row(children: [
+                  Icon(Icons.music_note_rounded, color: Destaques.musica, size: r.icon(22)),
+                  SizedBox(width: r.sp(8)),
+                  Text(track.tocando ? 'Tocando no Spotify' : 'Pausado', style: t.apoio()),
+                ]),
+                SizedBox(height: r.sp(10)),
+                Text(track.titulo,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontSize: (sw * 0.022).clamp(16.0, 26.0),
-                        fontWeight: FontWeight.w800,
-                        height: 1.15,
-                        decoration: TextDecoration.none)),
-
-                // Barra de progresso
-                if (tipo == 'barra') ...[
-                  const SizedBox(height: 10),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: LinearProgressIndicator(
-                      value: (card['barra'] as double).clamp(0.0, 1.0),
-                      backgroundColor: Colors.white.withValues(alpha: 0.08),
-                      valueColor: AlwaysStoppedAnimation<Color>(cor),
-                      minHeight: 6,
-                    ),
+                    style: t.titulo().copyWith(fontSize: r.fs(46))),
+                SizedBox(height: r.sp(6)),
+                Text(track.artista,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: t.subtitulo(cor: Cores.textoSecundario).copyWith(fontWeight: FontWeight.w500)),
+                if (detalhes.isNotEmpty) ...[
+                  SizedBox(height: r.sp(4)),
+                  Text(detalhes,
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: t.apoio(cor: Cores.textoApagado)),
+                ],
+                SizedBox(height: r.sp(22)),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: progresso,
+                    minHeight: r.sp(6),
+                    backgroundColor: Colors.white.withValues(alpha: 0.15),
+                    valueColor: const AlwaysStoppedAnimation(Cores.texto),
                   ),
-                ],
-
-                // Frase extra — o "tempero"
-                if (card['extra'] != null) ...[
-                  const SizedBox(height: 6),
-                  Text(card['extra'] as String,
-                      style: GoogleFonts.poppins(
-                          color: Colors.white.withValues(alpha: 0.50),
-                          fontSize: (sw * 0.012).clamp(9.0, 13.0),
-                          fontStyle: FontStyle.italic,
-                          decoration: TextDecoration.none)),
-                ],
+                ),
+                SizedBox(height: r.sp(6)),
+                Row(children: [
+                  Text(_t(posMs), style: t.legenda()),
+                  const Spacer(),
+                  Text(_t(durMs), style: t.legenda()),
+                ]),
+                SizedBox(height: r.sp(12)),
+                Row(
+                  children: [
+                    _botao(r, Icons.skip_previous_rounded, _spotify.faixaAnterior),
+                    SizedBox(width: r.sp(14)),
+                    _botao(r, track.tocando ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                        _spotify.togglePlayPause,
+                        principal: true),
+                    SizedBox(width: r.sp(14)),
+                    _botao(r, Icons.skip_next_rounded, _spotify.proximaFaixa),
+                    SizedBox(width: r.sp(24)),
+                    if (_proxima != null)
+                      Expanded(
+                        child: Text('A seguir: $_proxima',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: t.apoio()),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
         ],
+      );
+    });
+  }
+
+  Widget _botao(R r, IconData icone, Future<void> Function() acao, {bool principal = false}) {
+    final tamanho = r.sp(principal ? 68 : 54);
+    return GestureDetector(
+      onTap: () {
+        _iniciarTimerSaida();
+        acao();
+      },
+      child: Container(
+        width: tamanho,
+        height: tamanho,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: principal ? Cores.texto : Colors.white.withValues(alpha: 0.14),
+        ),
+        child: Icon(icone,
+            color: principal ? Colors.black : Cores.texto, size: tamanho * 0.55),
       ),
     );
   }
 
-  String _descPopularidade(int v) {
-    if (v >= 90) return '🔥  Top global — todo mundo ta ouvindo isso agora';
-    if (v >= 80) return '🔥  Hit absoluto — esta dominando as playlists';
-    if (v >= 70) return '⭐  Muito popular — nao tem como nao conhecer';
-    if (v >= 60) return '⭐  Bastante ouvida no Spotify';
-    if (v >= 40) return '🎵  Popularidade moderada — musica de bom gosto';
-    return '💎  Underground — voce tem um otimo gosto musical';
-  }
-
-  String _capitalizar(String s) {
-    if (s.isEmpty) return s;
-    return s
-        .split(' ')
-        .map((w) => w.isEmpty ? w : w[0].toUpperCase() + w.substring(1))
-        .join(' ');
+  /// Letra sincronizada: a linha cantada agora em destaque, com as vizinhas
+  /// mais apagadas. Sem letra disponível, mostra uma mensagem discreta.
+  Widget _painelLetra(R r) {
+    final t = Tipo(r);
+    final letra = _letra;
+    if (letra == null) {
+      return Center(
+        child: Text(
+          _buscandoLetra ? 'Procurando a letra...' : 'Letra não encontrada para esta música.',
+          style: t.apoio(cor: Cores.textoApagado),
+        ),
+      );
+    }
+    if (!letra.sincronizada) {
+      return SingleChildScrollView(
+        child: Text(letra.simples,
+            style: t.corpo(cor: Cores.textoSecundario), textAlign: TextAlign.left),
+      );
+    }
+    // Compensa ~0,4s da consulta ao Spotify para a letra não ficar atrasada.
+    final pos = Duration(milliseconds: _spotify.progressoAtualMs + 400);
+    final atual = letra.indiceEm(pos);
+    final linhas = <Widget>[];
+    for (var d = -1; d <= 2; d++) {
+      final i = atual + d;
+      if (i < 0 || i >= letra.linhas.length) {
+        linhas.add(SizedBox(height: r.sp(d == 0 ? 52 : 34)));
+        continue;
+      }
+      final texto = letra.linhas[i].texto.isEmpty ? '♪' : letra.linhas[i].texto;
+      linhas.add(AnimatedDefaultTextStyle(
+        duration: const Duration(milliseconds: 300),
+        style: d == 0
+            ? t.titulo().copyWith(fontSize: r.fs(38))
+            : t.subtitulo(cor: Colors.white.withValues(alpha: d < 0 ? 0.30 : 0.45))
+                .copyWith(fontWeight: FontWeight.w500),
+        child: Text(texto, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ));
+      linhas.add(SizedBox(height: r.sp(6)));
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: linhas,
+    );
   }
 
   Widget _telaConfigurar() => Container(
@@ -1386,7 +916,7 @@ class _TelaSpotifyState extends State<TelaSpotify>
           const SizedBox(height: 16),
           Text('Configure o Client ID do Spotify\nnas Configurações do app',
               textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.figtree(
                   color: Colors.white54,
                   fontSize: 16,
                   decoration: TextDecoration.none)),
@@ -1420,7 +950,7 @@ class _TelaSpotifyState extends State<TelaSpotify>
                 color: Color(0xFF1DB954), size: 28),
             const SizedBox(width: 12),
             Text('Conectar ao Spotify',
-                style: GoogleFonts.poppins(
+                style: GoogleFonts.figtree(
                     color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -1445,102 +975,3 @@ class _TelaSpotifyState extends State<TelaSpotify>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  _AudioVisualizerPainter — barras de áudio pulsando no fundo
-// ─────────────────────────────────────────────────────────────────────────────
-class _AudioVisualizerPainter extends CustomPainter {
-  final double fase; // 0.0 a 1.0, animado continuamente
-  final bool tocando;
-
-  const _AudioVisualizerPainter({
-    required this.fase,
-    required this.tocando,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (!tocando) {
-      _desenharOndas(canvas, size, 0.15); // ondas bem suaves quando pausado
-      return;
-    }
-    _desenharBarras(canvas, size);
-    _desenharOndas(canvas, size, 0.40);
-  }
-
-  void _desenharBarras(Canvas canvas, Size size) {
-    const numBarras = 48;
-    final barW = size.width / numBarras;
-    final baseY = size.height;
-
-    for (int i = 0; i < numBarras; i++) {
-      // Cada barra tem uma frequência e amplitude únicas
-      final freq1 = (i * 0.13 + fase * pi * 2);
-      final freq2 = (i * 0.07 + fase * pi * 4.3);
-      final freq3 = (i * 0.21 + fase * pi * 1.7);
-
-      final altura = size.height *
-          (0.10 +
-              0.18 * ((sin(freq1) + 1) / 2) +
-              0.12 * ((sin(freq2) + 1) / 2) +
-              0.08 * ((sin(freq3) + 1) / 2));
-
-      final x = i * barW;
-      final rect = Rect.fromLTWH(x + 1, baseY - altura, barW - 2, altura);
-
-      // Gradiente vertical: verde Spotify embaixo, ciano no topo
-      final paint = Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.bottomCenter,
-          end: Alignment.topCenter,
-          colors: [
-            const Color(0xFF1DB954).withValues(alpha: 0.35),
-            const Color(0xFF00d4ff).withValues(alpha: 0.18),
-            Colors.transparent,
-          ],
-          stops: const [0.0, 0.5, 1.0],
-        ).createShader(rect)
-        ..style = PaintingStyle.fill;
-
-      final rr = RRect.fromRectAndRadius(rect, const Radius.circular(3));
-      canvas.drawRRect(rr, paint);
-    }
-  }
-
-  void _desenharOndas(Canvas canvas, Size size, double opacidade) {
-    // Duas ondas senoidais sobrepostas — efeito de ondas de som
-    for (int onda = 0; onda < 3; onda++) {
-      final path = Path();
-      final amplitude = size.height * (0.04 + onda * 0.025);
-      final freqOffset = onda * 0.8;
-      final yBase = size.height * (0.55 + onda * 0.12);
-      final faseOnda = fase * pi * 2 + freqOffset;
-
-      path.moveTo(0, yBase);
-      for (double x = 0; x <= size.width; x += 2) {
-        final y = yBase + amplitude * sin((x / size.width) * pi * 5 + faseOnda);
-        path.lineTo(x, y);
-      }
-      path.lineTo(size.width, size.height);
-      path.lineTo(0, size.height);
-      path.close();
-
-      final paint = Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            const Color(0xFF1DB954).withValues(alpha: opacidade * (1 - onda * 0.25)),
-            Colors.transparent,
-          ],
-        ).createShader(
-            Rect.fromLTWH(0, yBase - amplitude, size.width, amplitude * 2 + 10))
-        ..style = PaintingStyle.fill;
-
-      canvas.drawPath(path, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_AudioVisualizerPainter old) =>
-      old.fase != fase || old.tocando != tocando;
-}

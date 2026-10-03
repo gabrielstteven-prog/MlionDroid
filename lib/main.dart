@@ -9,7 +9,10 @@ import 'config_manager.dart';
 import 'info_hub.dart';
 import 'performance_manager.dart';
 import 'rodizio.dart';
+import 'services/assistente_service.dart';
+import 'services/football_service.dart';
 import 'services/google_auth_service.dart';
+import 'widgets/camada_assistente.dart';
 import 'sistema.dart';
 import 'tela_bom_dia.dart';
 import 'tela_brasil.dart';
@@ -41,6 +44,7 @@ Future<void> main() async {
   InfoHub.instance.iniciar();
   unawaited(SpotifyManager.instance.iniciar());
   unawaited(GoogleAuthService.instance.verificar());
+  FootballService.instance.iniciarMonitor();
 
   runApp(
     MaterialApp(
@@ -157,6 +161,8 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     _avaliarModoNoite();
     InfoHub.instance.relogio.addListener(_avaliarModoNoite);
     SpotifyManager.instance.onFaixaTrocada = _onFaixaSpotifyTrocada;
+    AssistenteService.instance.pedidoDeTela.addListener(_pedidoDoAssistente);
+    FootballService.instance.ultimoLance.addListener(_lanceDoJogo);
   }
 
   @override
@@ -166,6 +172,8 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     _manualResetTimer?.cancel();
     _watchdogTimer?.cancel();
     SpotifyManager.instance.onFaixaTrocada = null;
+    AssistenteService.instance.pedidoDeTela.removeListener(_pedidoDoAssistente);
+    FootballService.instance.ultimoLance.removeListener(_lanceDoJogo);
     super.dispose();
   }
 
@@ -232,9 +240,51 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
 
   bool _terminouDuranteManual = false;
 
+  /// Telas exibidas desde a última vez que a Próxima Partida apareceu.
+  int _telasDesdeJogo = 99;
+
+  /// "Mostra o clima" falado ao assistente.
+  void _pedidoDoAssistente() {
+    final tela = AssistenteService.instance.pedidoDeTela.value;
+    if (tela == null || !mounted) return;
+    AssistenteService.instance.pedidoDeTela.value = null;
+    _irParaTela(tela);
+  }
+
+  /// Gol ou fim de jogo: mostra a partida na hora e, se configurado, fala.
+  void _lanceDoJogo() {
+    final lance = FootballService.instance.ultimoLance.value;
+    if (lance == null || !mounted || _modoNoite || _showConfig) return;
+    if (config.getBool('proxima_partida', 'falar_gols', true)) {
+      Sistema.falar(lance);
+    }
+    if (!_isManualMode && _telaExibida != 'proxima_partida') {
+      _irParaTela('proxima_partida', manual: false);
+    }
+  }
+
+  void _irParaTela(String tela, {bool manual = true}) {
+    if (manual) _entrarModoManual();
+    _transitioning = false;
+    _transicionar(() {
+      _spotifyInjetado = tela == 'spotify';
+      if (tela != 'spotify') _telaAtual = tela;
+    });
+  }
+
   void _avancar(int passo) {
     _terminouDuranteManual = false;
-    final proxima = proximaTela(_ordem, _elegiveis, _telaAtual, passo: passo);
+    var proxima = proximaTela(_ordem, _elegiveis, _telaAtual, passo: passo);
+    // Dia de jogo: perto do horário ou com a bola rolando, a Próxima
+    // Partida volta a cada duas telas (mesmo que esteja fora do rodízio).
+    _telasDesdeJogo++;
+    if (passo > 0 &&
+        FootballService.instance.jogoDoMomento.value != null &&
+        _telasDesdeJogo >= 2 &&
+        _telaAtual != 'proxima_partida') {
+      proxima = 'proxima_partida';
+    }
+    if (proxima == 'proxima_partida') _telasDesdeJogo = 0;
     _transicionar(() {
       _spotifyInjetado = false;
       _telaAtual = proxima ?? _telaAtual;
@@ -356,31 +406,39 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
 
   @override
   Widget build(BuildContext context) {
+    final Widget conteudo;
     if (_modoNoite) {
-      return TelaNoite(aoTocar: _acordarDaNoite);
-    }
-    if (_showConfig) {
-      return TelaConfig(aoSalvar: _fecharConfig);
-    }
-
-    // A TelaBomDia já mostra relógio e clima em destaque — a barra
-    // superior ficaria redundante nela.
-    return MlionShell(
-      modoManual: _isManualMode,
-      telaAtual: _telaExibida,
-      mostrarBarra: _telaExibida != 'bom_dia',
-      aoAbrirConfig: _abrirConfig,
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: GestureDetector(
-          onHorizontalDragEnd: _onSwipe,
-          child: Listener(
-            behavior: HitTestBehavior.translucent,
-            onPointerDown: (_) => _entrarModoManual(),
-            child: _aplicarTransicao(_buildTela()),
+      conteudo = TelaNoite(aoTocar: _acordarDaNoite);
+    } else if (_showConfig) {
+      conteudo = TelaConfig(aoSalvar: _fecharConfig);
+    } else {
+      // A TelaBomDia já mostra relógio e clima em destaque — a barra
+      // superior ficaria redundante nela.
+      conteudo = MlionShell(
+        modoManual: _isManualMode,
+        telaAtual: _telaExibida,
+        mostrarBarra: _telaExibida != 'bom_dia',
+        aoAbrirConfig: _abrirConfig,
+        child: Scaffold(
+          backgroundColor: Colors.transparent, // o céu do app aparece atrás
+          body: GestureDetector(
+            onHorizontalDragEnd: _onSwipe,
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (_) => _entrarModoManual(),
+              child: _aplicarTransicao(_buildTela()),
+            ),
           ),
         ),
-      ),
+      );
+    }
+    // O assistente e o alarme do temporizador ficam por cima de tudo —
+    // inclusive do Modo Noite.
+    return Stack(
+      children: [
+        Positioned.fill(child: conteudo),
+        const Positioned.fill(child: CamadaAssistente()),
+      ],
     );
   }
 }

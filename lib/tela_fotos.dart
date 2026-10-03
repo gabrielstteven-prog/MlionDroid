@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import 'config_manager.dart';
+import 'design/tema.dart';
 import 'performance_manager.dart';
 import 'responsive.dart';
 import 'services/fotos_service.dart';
@@ -112,28 +113,21 @@ class _TelaFotosState extends State<TelaFotos>
   @override
   Widget build(BuildContext context) {
     final r = R(context);
-    if (_carregando) {
-      return const ColoredBox(
-        color: Colors.black,
-        child: Center(child: CircularProgressIndicator(color: Colors.white)),
-      );
-    }
+    if (_carregando) return const Carregando(cor: Destaques.fotos);
     if (_fotos.isEmpty) {
-      return ColoredBox(
-        color: Colors.black,
-        child: Center(
-          child: GestureDetector(
-            onTap: _adicionar,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.add_photo_alternate_rounded,
-                    color: Colors.white70, size: r.icon(80)),
-                const SizedBox(height: 20),
-                Text('Toque para adicionar fotos às Memórias',
-                    style: TextStyle(color: Colors.white, fontSize: r.fs(20))),
-              ],
-            ),
+      return EstruturaTela(
+        icone: Icons.photo_library_rounded,
+        titulo: 'Memórias',
+        destaque: Destaques.fotos,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _adicionar,
+          child: const AvisoTela(
+            icone: Icons.add_photo_alternate_rounded,
+            titulo: 'Nenhuma foto ainda',
+            texto: 'Toque aqui para escolher fotos do tablet. Elas aparecem nesta '
+                'tela e como "Recordação do dia" no Bom Dia.',
+            cor: Destaques.fotos,
           ),
         ),
       );
@@ -159,13 +153,9 @@ class _TelaFotosState extends State<TelaFotos>
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.auto_awesome, color: Colors.cyanAccent, size: r.icon(18)),
-        const SizedBox(width: 8),
-        Text('Memórias  ${_indice + 1}/${_fotos.length}',
-            style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.9),
-                fontSize: r.fs(17),
-                fontWeight: FontWeight.w300)),
+        Icon(Icons.photo_library_rounded, color: Destaques.fotos, size: r.icon(20)),
+        SizedBox(width: r.sp(8)),
+        Text('Memórias, ${_indice + 1} de ${_fotos.length}', style: Tipo(r).apoio(cor: Cores.texto)),
       ],
     );
   }
@@ -250,8 +240,7 @@ class _FotoComMoldura extends StatelessWidget {
                   Icon(Icons.add_photo_alternate_rounded,
                       color: Colors.white70, size: r.icon(22)),
                   const SizedBox(width: 8),
-                  Text('Adicionar fotos',
-                      style: TextStyle(color: Colors.white70, fontSize: r.fs(13))),
+                  Text('Adicionar fotos', style: Tipo(r).apoio(cor: Cores.texto)),
                 ],
               ),
             ),

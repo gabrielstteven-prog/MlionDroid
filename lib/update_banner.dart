@@ -67,7 +67,7 @@ class _FolhaAtualizacao extends StatelessWidget {
                     Expanded(
                       child: Text(
                         'Atualização disponível',
-                        style: GoogleFonts.rajdhani(
+                        style: GoogleFonts.figtree(
                             color: Colors.white,
                             fontSize: 20,
                             fontWeight: FontWeight.w700),
@@ -78,7 +78,7 @@ class _FolhaAtualizacao extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   mgr.info != null ? 'Versão ${mgr.info!.versao}' : '',
-                  style: GoogleFonts.rajdhani(
+                  style: GoogleFonts.figtree(
                       color: _accentUpdate,
                       fontSize: 14,
                       fontWeight: FontWeight.w600),
@@ -88,13 +88,13 @@ class _FolhaAtualizacao extends StatelessWidget {
                   (mgr.info?.changelog.isNotEmpty ?? false)
                       ? mgr.info!.changelog
                       : 'Nova versão pronta para instalar.',
-                  style: GoogleFonts.rajdhani(
+                  style: GoogleFonts.figtree(
                       color: Colors.white70, fontSize: 15, height: 1.5),
                 ),
                 if (mgr.erroDownload != null) ...[
                   const SizedBox(height: 12),
                   Text(mgr.erroDownload!,
-                      style: GoogleFonts.rajdhani(
+                      style: GoogleFonts.figtree(
                           color: Colors.redAccent, fontSize: 15)),
                 ],
                 const SizedBox(height: 24),
@@ -111,7 +111,7 @@ class _FolhaAtualizacao extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(
                     'Baixando... ${(mgr.progresso * 100).toStringAsFixed(0)}%',
-                    style: GoogleFonts.rajdhani(
+                    style: GoogleFonts.figtree(
                         color: Colors.white38, fontSize: 13),
                   ),
                 ] else
@@ -129,7 +129,7 @@ class _FolhaAtualizacao extends StatelessWidget {
                       child: Center(
                         child: Text(
                           mgr.baixado ? 'Instalar agora' : 'Baixar e instalar',
-                          style: GoogleFonts.rajdhani(
+                          style: GoogleFonts.figtree(
                               color: Colors.black,
                               fontSize: 16,
                               fontWeight: FontWeight.w700),
@@ -143,7 +143,7 @@ class _FolhaAtualizacao extends StatelessWidget {
                     onPressed: () => Navigator.of(context).pop(),
                     child: Text(
                       'Fechar',
-                      style: GoogleFonts.rajdhani(
+                      style: GoogleFonts.figtree(
                           color: Colors.white38, fontSize: 14),
                     ),
                   ),

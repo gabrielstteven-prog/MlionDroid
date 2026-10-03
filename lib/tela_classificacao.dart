@@ -2,13 +2,12 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'cache_manager.dart';
 import 'config_manager.dart';
+import 'design/tema.dart';
 import 'responsive.dart';
 import 'services/football_service.dart';
-import 'util.dart';
 
 /// Classificação do Brasileirão e (se ativado) da Libertadores, via ESPN.
 class TelaClassificacao extends StatefulWidget {
@@ -37,8 +36,6 @@ class _TelaClassificacaoState extends State<TelaClassificacao> {
   bool _encerrada = false;
 
   int get _timeId => FootballService.instance.timeAtual.espnId;
-  Color get _corTop => parseCor(_cfg.get('palmeiras', 'cor_gradiente_top'), 0xFF00441B);
-  Color get _corDestaque => parseCor(_cfg.get('palmeiras', 'cor_destaque'), 0xFFC1A163);
 
   /// Velocidade em px/s. Configurações antigas guardavam 0.8 (px por tick),
   /// por isso o clamp.
@@ -113,181 +110,135 @@ class _TelaClassificacaoState extends State<TelaClassificacao> {
   @override
   Widget build(BuildContext context) {
     final r = R(context);
-    return Scaffold(
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [_corTop, _corTop.withValues(alpha: 0.4), Colors.black],
-          ),
-        ),
-        child: SafeArea(
-          child: _carregando
-              ? Center(child: CircularProgressIndicator(color: _corDestaque))
-              : _paginas.isEmpty
-                  ? Center(
-                      child: Text('Classificação indisponível no momento',
-                          style: GoogleFonts.rajdhani(
-                              color: Colors.white70, fontSize: r.fs(22))))
-                  : _buildPagina(r, _paginas[_pagina]),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPagina(R r, _Pagina p) {
-    return Column(
-      children: [
-        Padding(
-          padding: EdgeInsets.only(top: r.sp(14), bottom: r.sp(6)),
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 500),
-            child: Text(p.titulo,
-                key: ValueKey(p.titulo),
-                style: GoogleFonts.rajdhani(
-                  fontSize: r.fs(34),
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
-                  letterSpacing: 3,
-                )),
-          ),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            for (var i = 0; i < _paginas.length; i++)
-              Container(
-                width: 10,
-                height: 10,
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: i == _pagina ? _corDestaque : Colors.white30,
-                ),
-              ),
-            if (_atualizadoEm != null) ...[
-              const SizedBox(width: 12),
-              Text('atualizado ${descreverIdade(_atualizadoEm!)}',
-                  style: GoogleFonts.rajdhani(color: Colors.white38, fontSize: r.fs(14))),
-            ],
-          ],
-        ),
-        SizedBox(height: r.sp(10)),
-        Expanded(
-          child: ListView(
-            controller: _scroll,
-            padding: EdgeInsets.fromLTRB(r.sp(12), 0, r.sp(12), r.sp(30)),
-            children: [
-              for (final g in p.grupos) ...[
-                _buildGrupo(r, g, p.ehLiga),
-                SizedBox(height: r.sp(14)),
-              ],
-            ],
-          ),
-        ),
-      ],
+    final p = _paginas.isNotEmpty ? _paginas[_pagina] : null;
+    return EstruturaTela(
+      icone: Icons.leaderboard_rounded,
+      titulo: p?.titulo ?? 'Classificação',
+      subtitulo: _paginas.length > 1
+          ? 'Classificação, tabela ${_pagina + 1} de ${_paginas.length}'
+          : 'Classificação',
+      destaque: Destaques.tabela,
+      rodapeDireita:
+          _atualizadoEm != null ? 'Atualizado ${descreverIdade(_atualizadoEm!)}' : null,
+      child: _carregando
+          ? const Carregando(cor: Destaques.tabela)
+          : p == null
+              ? const AvisoTela(
+                  icone: Icons.wifi_off_rounded,
+                  titulo: 'Classificação indisponível',
+                  texto: 'Sem conexão com a fonte de dados. A tela tenta de novo na próxima passagem.',
+                )
+              : ListView(
+                    key: ValueKey(p.titulo),
+                    controller: _scroll,
+                    padding: EdgeInsets.only(bottom: r.sp(40)),
+                    children: [
+                      for (final g in p.grupos) ...[
+                        _buildGrupo(r, g, p.ehLiga),
+                        SizedBox(height: r.sp(28)),
+                      ],
+                    ],
+                  ),
     );
   }
 
   Widget _buildGrupo(R r, GrupoTabela g, bool ehLiga) {
-    final fs = r.fs(16);
+    final t = Tipo(r);
     final total = g.linhas.length;
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF151515),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _corDestaque.withValues(alpha: 0.6), width: 1.5),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: Color.lerp(_corTop, Colors.black, 0.2),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-            ),
-            child: Row(
-              children: [
-                SizedBox(width: 32, child: _cab('#', fs)),
-                const SizedBox(width: 38),
-                Expanded(child: _cab(ehLiga ? 'Time' : g.nome, fs, alinhar: TextAlign.left)),
-                for (final c in ['P', 'J', 'V', 'E', 'D', 'SG']) SizedBox(width: 40, child: _cab(c, fs)),
-              ],
-            ),
-          ),
-          for (var i = 0; i < g.linhas.length; i++)
-            _linha(r, g.linhas[i], i, total, ehLiga, fs),
-        ],
-      ),
+    final larguraNum = r.sp(56);
+    Widget num(String s, {TextStyle? estilo}) => SizedBox(
+        width: larguraNum,
+        child: Text(s, textAlign: TextAlign.center, style: estilo ?? t.legenda()));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: EdgeInsets.fromLTRB(r.sp(16), 0, r.sp(16), r.sp(8)),
+          child: Row(children: [
+            SizedBox(
+                width: r.sp(44),
+                child: Text(ehLiga ? '' : g.nome.replaceFirst('Grupo ', ''),
+                    style: t.legenda())),
+            SizedBox(width: r.sp(48)),
+            Expanded(child: Text(ehLiga ? 'Time' : g.nome, style: t.legenda())),
+            for (final c in ['Pts', 'J', 'V', 'E', 'D', 'Saldo']) num(c),
+          ]),
+        ),
+        for (var i = 0; i < g.linhas.length; i++) _linha(r, g.linhas[i], total, ehLiga),
+      ],
     );
   }
 
-  Widget _cab(String t, double fs, {TextAlign alinhar = TextAlign.center}) => Text(t,
-      textAlign: alinhar,
-      style: GoogleFonts.rajdhani(color: Colors.white, fontWeight: FontWeight.w800, fontSize: fs));
-
-  Widget _linha(R r, LinhaTabela l, int i, int total, bool ehLiga, double fs) {
+  Widget _linha(R r, LinhaTabela l, int total, bool ehLiga) {
+    final t = Tipo(r);
     final nosso = l.timeId == _timeId;
-    Color zona = Colors.transparent;
+    Color? zona;
     if (ehLiga) {
       if (l.posicao <= 4) {
-        zona = const Color(0xFF00C853);
+        zona = Cores.positivo;
       } else if (l.posicao <= 6) {
-        zona = const Color(0xFF69F0AE);
+        zona = Cores.positivo.withValues(alpha: 0.5);
       } else if (l.posicao > total - 4) {
-        zona = const Color(0xFFFF5252);
+        zona = Cores.alerta;
       }
     } else if (l.posicao <= 2) {
-      zona = const Color(0xFF00C853);
+      zona = Cores.positivo;
     }
-    final corTexto = nosso ? _corDestaque : Colors.white;
-    TextStyle st({bool bold = false}) => GoogleFonts.rajdhani(
-        color: corTexto,
-        fontSize: fs,
-        fontWeight: bold || nosso ? FontWeight.w800 : FontWeight.w500);
+    final corTexto = nosso ? corDoTime(FootballService.instance.timeAtual) : Cores.texto;
+    final estilo = t.corpo(cor: corTexto, peso: nosso ? FontWeight.w800 : FontWeight.w500);
+    final larguraNum = r.sp(56);
+    Widget num(String s, {bool forte = false, Color? cor}) => SizedBox(
+        width: larguraNum,
+        child: Text(s,
+            textAlign: TextAlign.center,
+            style: estilo.copyWith(
+                color: cor ?? estilo.color,
+                fontWeight: forte || nosso ? FontWeight.w800 : FontWeight.w500)));
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      margin: EdgeInsets.only(bottom: r.sp(4)),
+      padding: EdgeInsets.symmetric(horizontal: r.sp(16), vertical: r.sp(8)),
       decoration: BoxDecoration(
-        color: nosso
-            ? _corDestaque.withValues(alpha: 0.18)
-            : (i.isEven ? const Color(0xFF151515) : const Color(0xFF1d1d1d)),
-        border: Border(left: BorderSide(width: 4, color: zona)),
+        color: nosso ? Cores.superficieElevada : null,
+        borderRadius: BorderRadius.circular(r.sp(14)),
       ),
       child: Row(
         children: [
-          SizedBox(width: 32, child: Text('${l.posicao}', style: st(bold: true))),
+          Container(
+            width: 4,
+            height: r.sp(28),
+            margin: EdgeInsets.only(right: r.sp(12)),
+            decoration: BoxDecoration(
+              color: zona ?? Colors.transparent,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          SizedBox(width: r.sp(28), child: Text('${l.posicao}', style: estilo)),
           SizedBox(
-            width: 38,
+            width: r.sp(48),
             child: l.escudo.isEmpty
-                ? const Icon(Icons.shield, size: 26, color: Colors.white38)
+                ? Icon(Icons.shield, size: r.icon(26), color: Cores.textoApagado)
                 : CachedNetworkImage(
                     imageUrl: l.escudo,
-                    height: 26,
-                    width: 26,
+                    height: r.icon(28),
+                    width: r.icon(28),
                     memCacheHeight: 80,
                     errorWidget: (_, __, ___) =>
-                        const Icon(Icons.shield, size: 26, color: Colors.white38),
+                        Icon(Icons.shield, size: r.icon(26), color: Cores.textoApagado),
                   ),
           ),
-          Expanded(child: Text(l.time, overflow: TextOverflow.ellipsis, style: st())),
-          for (final v in [l.pontos, l.jogos, l.vitorias, l.empates, l.derrotas])
-            SizedBox(width: 40, child: Text('$v', textAlign: TextAlign.center, style: st())),
-          SizedBox(
-            width: 40,
-            child: Text(l.saldo > 0 ? '+${l.saldo}' : '${l.saldo}',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.rajdhani(
-                  fontSize: fs,
-                  fontWeight: FontWeight.w800,
-                  color: l.saldo > 0
-                      ? const Color(0xFF00C853)
-                      : l.saldo < 0
-                          ? const Color(0xFFFF5252)
-                          : Colors.white54,
-                )),
-          ),
+          Expanded(child: Text(l.time, overflow: TextOverflow.ellipsis, style: estilo)),
+          num('${l.pontos}', forte: true),
+          num('${l.jogos}'),
+          num('${l.vitorias}'),
+          num('${l.empates}'),
+          num('${l.derrotas}'),
+          num(l.saldo > 0 ? '+${l.saldo}' : '${l.saldo}',
+              cor: l.saldo > 0
+                  ? Cores.positivo
+                  : l.saldo < 0
+                      ? Cores.alerta
+                      : Cores.textoApagado),
         ],
       ),
     );
