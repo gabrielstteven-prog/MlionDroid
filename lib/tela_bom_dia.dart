@@ -13,10 +13,11 @@ import 'design/tema.dart';
 import 'info_hub.dart';
 import 'performance_manager.dart';
 import 'responsive.dart';
-import 'sistema.dart';
 import 'services/fotos_service.dart';
+import 'services/jarvis_service.dart';
 import 'services/news_service.dart';
 import 'services/resumo_service.dart';
+import 'services/voz_service.dart';
 import 'services/weather_service.dart';
 import 'util.dart';
 
@@ -198,9 +199,14 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
     final chave = 'bom_dia_falado_${hoje.year}_${hoje.month}_${hoje.day}';
     if (await CacheManager.instance.obterEntrada<bool>(chave) != null) return;
     await CacheManager.instance.salvar(chave, true);
+    // Com IA configurada, o Jarvis escreve um briefing natural; sem IA (ou
+    // se ela falhar), lê o resumo pronto.
     final nome = _nomeUsuario;
-    await Sistema.falar(ResumoService.instance
-        .paraFalar(nome.isEmpty ? _saudacao : '$_saudacao, $nome', _resumo));
+    final texto = await JarvisService.instance.briefing(_saudacao) ??
+        ResumoService.instance
+            .paraFalar(nome.isEmpty ? _saudacao : '$_saudacao, $nome', _resumo);
+    if (!mounted) return;
+    await VozService.instance.falar(texto.replaceAll('°', ' graus'));
   }
 
   Future<void> _buscarNoticia() async {
@@ -256,12 +262,7 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
     });
   }
 
-  String get _saudacao {
-    final h = DateTime.now().hour;
-    if (h < 12) return 'Bom dia';
-    if (h < 18) return 'Boa tarde';
-    return 'Boa noite';
-  }
+  String get _saudacao => saudacaoDaHora();
 
   // ─── BUILD ────────────────────────────────────────────────────────────────
   @override

@@ -9,6 +9,7 @@ import 'config_manager.dart';
 import 'info_hub.dart';
 import 'performance_manager.dart';
 import 'rodizio.dart';
+import 'services/voz_service.dart';
 import 'services/assistente_service.dart';
 import 'services/football_service.dart';
 import 'services/google_auth_service.dart';
@@ -256,7 +257,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     final lance = FootballService.instance.ultimoLance.value;
     if (lance == null || !mounted || _modoNoite || _showConfig) return;
     if (config.getBool('proxima_partida', 'falar_gols', true)) {
-      Sistema.falar(lance);
+      VozService.instance.falar(lance); // gol narrado com a voz premium
     }
     if (!_isManualMode && _telaExibida != 'proxima_partida') {
       _irParaTela('proxima_partida', manual: false);

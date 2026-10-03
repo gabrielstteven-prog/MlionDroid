@@ -7,7 +7,9 @@ import '../sistema.dart';
 import '../util.dart';
 import 'football_service.dart';
 import 'google_auth_service.dart';
+import 'jarvis_service.dart';
 import 'resumo_service.dart';
+import 'voz_service.dart';
 import 'weather_service.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -216,8 +218,14 @@ class AssistenteService extends ChangeNotifier {
     ultimaResposta = resposta;
     estado = EstadoAssistente.respondendo;
     notifyListeners();
-    await Sistema.falar(resposta);
-    Timer(const Duration(seconds: 8), () {
+    final inicio = DateTime.now();
+    await VozService.instance.falar(resposta);
+    // A voz premium só retorna quando termina; a do Android retorna na hora,
+    // então estima o tempo de fala (~14 letras por segundo) para o orbe.
+    final falando = DateTime.now().difference(inicio);
+    final estimado = Duration(milliseconds: 1500 + resposta.length * 70);
+    final resta = falando > const Duration(seconds: 1) ? const Duration(seconds: 2) : estimado;
+    Timer(resta, () {
       if (estado == EstadoAssistente.respondendo) {
         estado = EstadoAssistente.parado;
         notifyListeners();
@@ -227,7 +235,7 @@ class AssistenteService extends ChangeNotifier {
 
   void fechar() {
     estado = EstadoAssistente.parado;
-    Sistema.pararFala();
+    VozService.instance.parar();
     notifyListeners();
   }
 
@@ -257,6 +265,8 @@ class AssistenteService extends ChangeNotifier {
       case TipoComando.jogo:
         return _respostaJogo();
       case TipoComando.resumo:
+        final briefing = await JarvisService.instance.briefing(saudacaoDaHora());
+        if (briefing != null) return briefing;
         final itens = await ResumoService.instance.montar();
         if (itens.isEmpty) return 'Ainda não tenho informações do seu dia.';
         return itens.map((i) => i.texto).join(' ').replaceAll('°', ' graus');
@@ -264,8 +274,12 @@ class AssistenteService extends ChangeNotifier {
         pedidoDeTela.value = c.tela;
         return 'Abrindo.';
       case TipoComando.desconhecido:
+        // O cérebro local não entendeu: pergunta para a IA (Gemini / Groq).
+        final ia = await JarvisService.instance.responder(c.textoOriginal);
+        if (ia != null) return ia;
         return 'Ainda não sei responder isso. Tente: timer de 10 minutos, '
-            'vai chover hoje, adiciona leite na lista, ou quando é o próximo jogo.';
+            'vai chover hoje, adiciona leite na lista, ou quando é o próximo jogo. '
+            'Para perguntas livres, configure a inteligência artificial nas Configurações.';
     }
   }
 

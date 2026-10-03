@@ -35,6 +35,17 @@ class Sistema {
     }
   }
 
+  /// Toca um arquivo de áudio (MP3 da voz premium) e só retorna quando ele
+  /// termina. false = não conseguiu tocar (o chamador cai para o TTS).
+  static Future<bool> tocarAudio(String caminho) async {
+    try {
+      return await _canal.invokeMethod<bool>('tocarAudio', {'caminho': caminho}) ?? false;
+    } catch (e) {
+      debugPrint('Sistema.tocarAudio: $e');
+      return false;
+    }
+  }
+
   static Future<void> pararFala() async {
     try {
       await _canal.invokeMethod('pararFala');

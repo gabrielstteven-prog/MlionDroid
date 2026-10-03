@@ -2,6 +2,8 @@ package com.example.flutter_application_1
 
 import android.app.Activity
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.os.Bundle
@@ -78,7 +80,14 @@ class MainActivity : FlutterActivity() {
                 }
                 "pararFala" -> {
                     tts?.stop()
+                    pararAudio()
                     result.success(null)
+                }
+                "tocarAudio" -> {
+                    // Responde só quando o áudio termina (ou falha): o Dart sabe
+                    // quando a fala acabou para apagar o orbe.
+                    val caminho = call.argument<String>("caminho") ?: ""
+                    tocarAudio(caminho, result)
                 }
                 "tocarAlarme" -> {
                     tocarAlarme()
@@ -116,6 +125,44 @@ class MainActivity : FlutterActivity() {
         if (ttsPronto) tts?.speak(texto, TextToSpeech.QUEUE_FLUSH, null, "mlion")
     }
 
+    // ── Áudio pronto (voz da ElevenLabs em MP3) ────────────────────────────
+    private var player: MediaPlayer? = null
+    private var playerResult: MethodChannel.Result? = null
+
+    private fun tocarAudio(caminho: String, result: MethodChannel.Result) {
+        pararAudio()
+        tts?.stop()
+        playerResult = result
+        try {
+            val p = MediaPlayer()
+            p.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            p.setDataSource(caminho)
+            p.setOnCompletionListener { terminarAudio(true) }
+            p.setOnErrorListener { _, _, _ -> terminarAudio(false); true }
+            p.prepare()
+            p.start()
+            player = p
+        } catch (e: Exception) {
+            terminarAudio(false)
+        }
+    }
+
+    private fun terminarAudio(ok: Boolean) {
+        player?.release()
+        player = null
+        playerResult?.success(ok)
+        playerResult = null
+    }
+
+    private fun pararAudio() {
+        if (player != null) terminarAudio(true)
+    }
+
     // ── Alarme do temporizador ─────────────────────────────────────────────
     private var alarme: Ringtone? = null
 
@@ -132,6 +179,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         tts?.shutdown()
+        pararAudio()
         alarme?.stop()
         super.onDestroy()
     }

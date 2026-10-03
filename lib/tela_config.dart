@@ -22,6 +22,7 @@ import 'tela_spotify.dart';
 import 'times.dart';
 import 'update_banner.dart';
 import 'update_manager.dart';
+import 'widgets/config_assistente.dart';
 
 // ── Estados brasileiros (sigla → nome completo) ───────────────────────────
 const Map<String, String> estadosBrasil = {
@@ -117,6 +118,7 @@ class _TelaConfigState extends State<TelaConfig>
     'sobre': 'ℹ️ Sobre',
     'atualizacoes': '🔄 Atualizações',
     'geral': '⚙️ Geral',
+    'assistente': '🤖 Assistente (Jarvis)',
     'time': '⚽ Time & Futebol',
     'clima': '🌤️ Clima',
     'proxima_partida': '🏟️ Próxima Partida',
@@ -516,6 +518,8 @@ class _TelaConfigState extends State<TelaConfig>
           return _buildSobreConfig();
         case 'geral':
           return _buildGeralConfig();
+        case 'assistente':
+          return const ConfigAssistente();
         case 'time':
           return _buildTimeConfig();
         case 'clima':

@@ -87,3 +87,11 @@ String limparHtml(String s) => s
     .replaceAll('&#39;', "'")
     .replaceAll(RegExp(r'\s+'), ' ')
     .trim();
+
+/// "Bom dia", "Boa tarde" ou "Boa noite" pela hora.
+String saudacaoDaHora([DateTime? quando]) {
+  final h = (quando ?? DateTime.now()).hour;
+  if (h < 12) return 'Bom dia';
+  if (h < 18) return 'Boa tarde';
+  return 'Boa noite';
+}

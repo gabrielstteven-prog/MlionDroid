@@ -111,6 +111,13 @@ class ConfigManager {
       'cidades_selecionadas': ['hortolandia'],
       'intervalo_atualizacao_min': 60,
     },
+    'assistente': {
+      'nome': 'Jarvis',
+      'gemini_modelo': 'gemini-3.8-flash',
+      'groq_modelo': 'openai/gpt-oss-120b',
+      'elevenlabs_modelo': 'eleven_flash_v2_5',
+      'elevenlabs_limite_mes': 18000,
+    },
     'bom_dia': {
       'hora_inicio': 4,
       'hora_fim': 10,
