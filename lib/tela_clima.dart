@@ -270,7 +270,7 @@ class _TelaClimaState extends State<TelaClima> {
             ),
           ],
         ),
-        SizedBox(height: r.sp(14)),
+        SizedBox(height: r.sp(30)), // respiro entre a temperatura e o card
         CardAvisos(
           aoCompletarCiclo: () {
             _avisosVistos = true;

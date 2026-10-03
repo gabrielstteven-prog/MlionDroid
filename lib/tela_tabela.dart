@@ -87,8 +87,9 @@ class _TelaTabelaState extends State<TelaTabela> {
         Duration(
             seconds: _diaDeJogo
                 ? 60
-                : _cfg.getInt('proxima_partida', 'duracao_seg', 20).clamp(5, 120)),
-        () {
+                : _cfg
+                    .getInt('proxima_partida', 'duracao_seg', 20)
+                    .clamp(5, 120)), () {
       if (mounted) widget.aoTerminar();
     });
     if (jogo != null && jogo.aoVivo) {
@@ -115,7 +116,8 @@ class _TelaTabelaState extends State<TelaTabela> {
   Widget build(BuildContext context) {
     final jogo = _jogo;
     return EstruturaTela(
-      icone: jogo?.aoVivo == true ? Icons.sensors_rounded : Icons.stadium_rounded,
+      icone:
+          jogo?.aoVivo == true ? Icons.sensors_rounded : Icons.stadium_rounded,
       marca: EscudoTime(time: _time, tamanho: R(context).sp(56)),
       titulo: jogo == null
           ? 'Próxima partida'
@@ -126,8 +128,9 @@ class _TelaTabelaState extends State<TelaTabela> {
                   : 'Próxima partida',
       subtitulo: jogo?.competicao,
       destaque: jogo?.aoVivo == true ? Cores.alerta : _cor,
-      rodapeDireita:
-          _atualizadoEm != null ? 'Atualizado ${descreverIdade(_atualizadoEm!)}' : null,
+      rodapeDireita: _atualizadoEm != null
+          ? 'Atualizado ${descreverIdade(_atualizadoEm!)}'
+          : null,
       child: _carregando
           ? Carregando(cor: _cor)
           : jogo == null
@@ -168,7 +171,8 @@ class _TelaTabelaState extends State<TelaTabela> {
         children: [
           logo,
           SizedBox(height: r.sp(10)),
-          Text('${jogo.mandante.gols ?? 0} – ${jogo.visitante.gols ?? 0}', style: t.heroi()),
+          Text('${jogo.mandante.gols ?? 0} – ${jogo.visitante.gols ?? 0}',
+              style: t.heroi()),
           SizedBox(height: r.sp(8)),
           Selo(jogo.aoVivo ? 'Ao vivo, ${jogo.relogio}' : 'Encerrado',
               cor: jogo.aoVivo ? Cores.alerta : Cores.textoSecundario,
@@ -194,7 +198,8 @@ class _TelaTabelaState extends State<TelaTabela> {
     return Row(
       children: [
         Expanded(child: _escudoENome(r, jogo.mandante)),
-        Expanded(flex: 2, child: FittedBox(fit: BoxFit.scaleDown, child: centro)),
+        Expanded(
+            flex: 2, child: FittedBox(fit: BoxFit.scaleDown, child: centro)),
         Expanded(child: _escudoENome(r, jogo.visitante)),
       ],
     );
@@ -218,12 +223,13 @@ class _TelaTabelaState extends State<TelaTabela> {
           width: tamanho,
           height: tamanho,
           child: tp.escudo.isEmpty
-              ? Icon(Icons.shield_rounded, color: Cores.textoApagado, size: tamanho * 0.7)
+              ? Icon(Icons.shield_rounded,
+                  color: Cores.textoApagado, size: tamanho * 0.7)
               : CachedNetworkImage(
                   imageUrl: tp.escudo,
                   fit: BoxFit.contain,
-                  errorWidget: (_, __, ___) =>
-                      Icon(Icons.shield_rounded, color: Cores.textoApagado, size: tamanho * 0.7),
+                  errorWidget: (_, __, ___) => Icon(Icons.shield_rounded,
+                      color: Cores.textoApagado, size: tamanho * 0.7),
                 ),
         ),
         SizedBox(height: r.sp(12)),
@@ -240,11 +246,14 @@ class _TelaTabelaState extends State<TelaTabela> {
   Widget _faixaInformacoes(R r, Partida jogo) {
     final t = Tipo(r);
     final d = jogo.data;
-    final local = [jogo.estadio, jogo.cidade].where((s) => s.isNotEmpty).join(', ');
+    final local =
+        [jogo.estadio, jogo.cidade].where((s) => s.isNotEmpty).join(', ');
     final canais = (_tv?.canais ?? const <String>[]).map(nomeDoCanal).toList();
-    final mostrarCanais = _cfg.getBool('proxima_partida', 'mostrar_canais', true);
+    final mostrarCanais =
+        _cfg.getBool('proxima_partida', 'mostrar_canais', true);
 
-    Widget item(IconData icone, String rotulo, String valor, {Color? cor}) => Expanded(
+    Widget item(IconData icone, String rotulo, String valor, {Color? cor}) =>
+        Expanded(
           child: Row(
             children: [
               Icon(icone, color: cor ?? _cor, size: r.icon(28)),
@@ -271,14 +280,13 @@ class _TelaTabelaState extends State<TelaTabela> {
         children: [
           item(Icons.event_rounded, 'Quando',
               '${diaSemanaLongo(d)}, ${d.day}/${d.month} às ${horaMinuto(d)}'),
-          item(Icons.place_rounded, 'Onde', local.isEmpty ? 'A confirmar' : local),
+          item(Icons.place_rounded, 'Onde',
+              local.isEmpty ? 'A confirmar' : local),
           if (mostrarCanais)
             item(
               Icons.live_tv_rounded,
               'Onde assistir',
-              canais.isNotEmpty
-                  ? canais.join(', ')
-                  : 'A confirmar',
+              canais.isNotEmpty ? canais.join(', ') : 'A confirmar',
               cor: canais.isNotEmpty ? Cores.aviso : null,
             ),
         ],
@@ -300,9 +308,13 @@ class _TelaTabelaState extends State<TelaTabela> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                      e.formacao.isEmpty ? 'Escalação do ${e.time}' : 'Escalação do ${e.time} (${e.formacao})',
+                      e.formacao.isEmpty
+                          ? 'Escalação do ${e.time}'
+                          : 'Escalação do ${e.time} (${e.formacao})',
                       style: t.corpo(
-                          cor: e.timeId == _time.espnId ? corDoTime(_time) : Cores.texto,
+                          cor: e.timeId == _time.espnId
+                              ? corDoTime(_time)
+                              : Cores.texto,
                           peso: FontWeight.w700)),
                   SizedBox(height: r.sp(8)),
                   Expanded(
@@ -338,10 +350,10 @@ class _TelaTabelaState extends State<TelaTabela> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Últimos jogos', style: t.legenda()),
-              SizedBox(height: r.sp(10)),
+              SizedBox(height: r.sp(14)),
               for (final p in _ultimos.take(3))
                 Padding(
-                  padding: EdgeInsets.only(bottom: r.sp(6)),
+                  padding: EdgeInsets.only(bottom: r.sp(14)),
                   child: Row(children: [
                     _bolinha(r, p.resultadoPara(id) ?? '-'),
                     SizedBox(width: r.sp(12)),
@@ -364,10 +376,10 @@ class _TelaTabelaState extends State<TelaTabela> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Próximas partidas', style: t.legenda()),
-              SizedBox(height: r.sp(10)),
+              SizedBox(height: r.sp(14)),
               for (final p in seguintes)
                 Padding(
-                  padding: EdgeInsets.only(bottom: r.sp(6)),
+                  padding: EdgeInsets.only(bottom: r.sp(14)),
                   child: Text(
                     '${p.data.day}/${p.data.month}  ${p.mandante.nome} x ${p.visitante.nome}, ${p.competicao}',
                     style: t.apoio(cor: Cores.texto),
@@ -395,7 +407,9 @@ class _TelaTabelaState extends State<TelaTabela> {
       alignment: Alignment.center,
       decoration: BoxDecoration(color: cor, shape: BoxShape.circle),
       child: Text(res,
-          style: Tipo(r).legenda(cor: Colors.black).copyWith(fontWeight: FontWeight.w800)),
+          style: Tipo(r)
+              .legenda(cor: Colors.black)
+              .copyWith(fontWeight: FontWeight.w800)),
     );
   }
 }
@@ -422,7 +436,9 @@ String nomeDoCanal(String s) {
   final baixo = s.trim().toLowerCase();
   for (final e in marcas.entries) {
     if (baixo == e.key) return e.value;
-    if (baixo.startsWith('${e.key} ')) return '${e.value}${s.trim().substring(e.key.length)}';
+    if (baixo.startsWith('${e.key} ')) {
+      return '${e.value}${s.trim().substring(e.key.length)}';
+    }
   }
   return baixo
       .split(' ')

@@ -486,59 +486,63 @@ class _TelaCalendarioState extends State<TelaCalendario>
     final t = Tipo(r);
     return Align(
       alignment: Alignment.topCenter,
-      child: Superficie(
-        padding: EdgeInsets.fromLTRB(r.sp(16), r.sp(16), r.sp(16), r.sp(8)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Text(
-                    _capitalizar(
-                        DateFormat('MMMM yyyy', 'pt_BR').format(_hoje)),
-                    style: t.subtitulo()),
-                const Spacer(),
-                _legenda(_corEvento, 'Evento', r),
-                SizedBox(width: r.sp(14)),
-                _legenda(_corTarefa, 'Tarefa', r),
-                SizedBox(width: r.sp(14)),
-                _legenda(_corAtraso, 'Atrasada', r),
-                SizedBox(width: r.sp(14)),
-                _legenda(_corAniversario, 'Aniversário', r),
-              ],
-            ),
-            SizedBox(height: r.sp(8)),
-            TableCalendar(
-              locale: 'pt_BR',
-              focusedDay: _diaSelecionado ?? _hoje,
-              firstDay: DateTime.utc(2020),
-              lastDay: DateTime.utc(2035),
-              // Linhas compactas: o círculo já diz tudo, sem sobra de espaço.
-              rowHeight: r.sp(64),
-              daysOfWeekHeight: r.sp(32),
-              headerVisible: false,
-              availableGestures: AvailableGestures.none,
-              selectedDayPredicate: (d) =>
-                  _diaSelecionado != null &&
-                  _chave(d) == _chave(_diaSelecionado!),
-              onDaySelected: (sel, _) => _tocarNoDia(sel),
-              eventLoader: (d) => _itensPorDia[_chave(d)] ?? [],
-              daysOfWeekStyle: DaysOfWeekStyle(
-                weekdayStyle: t.legenda(),
-                weekendStyle: t.legenda(),
+      child: Padding(
+        // Respiro entre o título "Google Agenda" e o calendário.
+        padding: EdgeInsets.only(top: r.sp(20)),
+        child: Superficie(
+          padding: EdgeInsets.fromLTRB(r.sp(16), r.sp(16), r.sp(16), r.sp(8)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Text(
+                      _capitalizar(
+                          DateFormat('MMMM yyyy', 'pt_BR').format(_hoje)),
+                      style: t.subtitulo()),
+                  const Spacer(),
+                  _legenda(_corEvento, 'Evento', r),
+                  SizedBox(width: r.sp(14)),
+                  _legenda(_corTarefa, 'Tarefa', r),
+                  SizedBox(width: r.sp(14)),
+                  _legenda(_corAtraso, 'Atrasada', r),
+                  SizedBox(width: r.sp(14)),
+                  _legenda(_corAniversario, 'Aniversário', r),
+                ],
               ),
-              calendarStyle: const CalendarStyle(
-                outsideDaysVisible: false,
-                markersMaxCount: 0,
+              SizedBox(height: r.sp(8)),
+              TableCalendar(
+                locale: 'pt_BR',
+                focusedDay: _diaSelecionado ?? _hoje,
+                firstDay: DateTime.utc(2020),
+                lastDay: DateTime.utc(2035),
+                // Linhas compactas: o círculo já diz tudo, sem sobra de espaço.
+                rowHeight: r.sp(80),
+                daysOfWeekHeight: r.sp(32),
+                headerVisible: false,
+                availableGestures: AvailableGestures.none,
+                selectedDayPredicate: (d) =>
+                    _diaSelecionado != null &&
+                    _chave(d) == _chave(_diaSelecionado!),
+                onDaySelected: (sel, _) => _tocarNoDia(sel),
+                eventLoader: (d) => _itensPorDia[_chave(d)] ?? [],
+                daysOfWeekStyle: DaysOfWeekStyle(
+                  weekdayStyle: t.legenda(),
+                  weekendStyle: t.legenda(),
+                ),
+                calendarStyle: const CalendarStyle(
+                  outsideDaysVisible: false,
+                  markersMaxCount: 0,
+                ),
+                calendarBuilders: CalendarBuilders(
+                  defaultBuilder: (_, d, __) => _diaCell(d, false, false, r),
+                  todayBuilder: (_, d, __) => _diaCell(d, true, false, r),
+                  selectedBuilder: (_, d, __) =>
+                      _diaCell(d, _chave(d) == _chave(_hoje), true, r),
+                ),
               ),
-              calendarBuilders: CalendarBuilders(
-                defaultBuilder: (_, d, __) => _diaCell(d, false, false, r),
-                todayBuilder: (_, d, __) => _diaCell(d, true, false, r),
-                selectedBuilder: (_, d, __) =>
-                    _diaCell(d, _chave(d) == _chave(_hoje), true, r),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -563,7 +567,7 @@ class _TelaCalendarioState extends State<TelaCalendario>
                     ? _corAniversario
                     : null;
 
-    final diametro = r.sp(50);
+    final diametro = r.sp(60);
     return Center(
       child: Container(
         width: diametro,
@@ -583,12 +587,12 @@ class _TelaCalendarioState extends State<TelaCalendario>
                       : null,
         ),
         child: Text('${day.day}',
-            style: t.corpo(
-              cor: isHoje ? Colors.black : Cores.texto,
-              peso: isHoje || situacao != null
-                  ? FontWeight.w800
-                  : FontWeight.w500,
-            )),
+            style: t
+                .subtitulo(cor: isHoje ? Colors.black : Cores.texto)
+                .copyWith(
+                    fontWeight: isHoje || situacao != null
+                        ? FontWeight.w800
+                        : FontWeight.w500)),
       ),
     );
   }
