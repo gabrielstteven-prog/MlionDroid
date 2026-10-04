@@ -75,7 +75,7 @@ flutter {
 }
 
 dependencies {
-    // Palavra de ativação "Jarvis" (Picovoice Porcupine): roda no próprio
-    // tablet; a chave gratuita (uso pessoal) é colada nas Configurações.
-    implementation("ai.picovoice:porcupine-android:4.0.2")
+    // Palavra de ativação "Hey Jarvis" (openWakeWord): os modelos ficam em
+    // assets/wakeword e rodam no próprio tablet — sem conta nem chave.
+    implementation("org.tensorflow:tensorflow-lite:2.17.0")
 }

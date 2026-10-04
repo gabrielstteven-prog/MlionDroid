@@ -233,9 +233,7 @@ class AssistenteService extends ChangeNotifier {
   /// Motivo de a palavra "Jarvis" não estar funcionando ("" = funcionando).
   final ValueNotifier<String> statusPalavra = ValueNotifier('');
 
-  bool get _palavraConfigurada =>
-      _cfg.getBool('assistente', 'palavra_ativacao', true) &&
-      _cfg.getString('assistente', 'picovoice_chave', '').trim().isNotEmpty;
+  bool get _palavraConfigurada => _cfg.getBool('assistente', 'palavra_ativacao', true);
 
   /// Liga/desliga a escuta da palavra conforme o estado e as Configurações.
   /// [forcar] religa mesmo se já estava ligada (chave ou sensibilidade mudou).
@@ -252,15 +250,12 @@ class AssistenteService extends ChangeNotifier {
       return;
     }
     final erro = await Sistema.ligarPalavra(
-      _cfg.getString('assistente', 'picovoice_chave', '').trim(),
-      _cfg.getDouble('assistente', 'palavra_sensibilidade', 0.6),
-    );
+        _cfg.getDouble('assistente', 'palavra_sensibilidade', 0.6));
     if (erro != null) _palavraLigada = false;
     statusPalavra.value = switch (erro) {
       null => '',
-      'sem_chave' => 'Falta a chave da Picovoice.',
       'sem_permissao' => 'Falta a permissão do microfone. Aceite e tente de novo.',
-      _ => 'A Picovoice recusou: $erro',
+      _ => 'Não consegui ligar a escuta: $erro',
     };
   }
 

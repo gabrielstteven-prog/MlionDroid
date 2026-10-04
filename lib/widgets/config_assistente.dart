@@ -107,21 +107,19 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
           ]),
         ]),
         const SizedBox(height: 28),
-        _titulo('🗣️ Chamar pelo nome ("Jarvis")'),
+        _titulo('🗣️ Chamar pelo nome ("Hey Jarvis")'),
         const SizedBox(height: 14),
         _card([
           Text(
-            'Diga "Jarvis" de qualquer lugar da sala e ele começa a ouvir, sem tocar '
-            'no microfone. A escuta da palavra roda dentro do tablet (o áudio não sai '
-            'dele); só depois do "Jarvis" a frase vai para o reconhecimento de voz.',
+            'Diga "Hey Jarvis" de qualquer lugar da sala e ele começa a ouvir, sem tocar '
+            'no microfone. Não precisa de conta nem chave: a escuta da palavra roda '
+            'dentro do tablet (o áudio não sai dele); só depois do "Hey Jarvis" a '
+            'frase vai para o reconhecimento de voz.',
             style: _txt(14),
           ),
           const SizedBox(height: 16),
-          _campo('picovoice_chave', 'Chave da Picovoice (gratuita, uso pessoal)',
-              'console.picovoice.ai → AccessKey', Icons.key_rounded,
-              secreto: true),
           Row(children: [
-            Expanded(child: Text('Ouvir a palavra "Jarvis"', style: _txt(15, peso: FontWeight.w600))),
+            Expanded(child: Text('Ouvir "Hey Jarvis"', style: _txt(15, peso: FontWeight.w600))),
             Switch(
               value: _cfg.getBool('assistente', 'palavra_ativacao', true),
               onChanged: (v) => setState(() => _cfg.set('assistente', 'palavra_ativacao', v)),
@@ -151,13 +149,17 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
               final s = AssistenteService.instance.statusPalavra.value;
               setState(() => _statusPalavra = s.isEmpty
                   ? (_cfg.getBool('assistente', 'palavra_ativacao', true)
-                      ? 'Pronto! Diga "Jarvis" para testar.'
+                      ? 'Pronto! Diga "Hey Jarvis" para testar.'
                       : 'Escuta da palavra desligada.')
                   : s);
             }),
             const SizedBox(width: 14),
             Expanded(child: Text(_statusPalavra, style: _txt(14, cor: Colors.white))),
           ]),
+          const SizedBox(height: 10),
+          Text('Modelo "hey jarvis" do projeto openWakeWord (David Scripka), '
+              'licença CC BY-NC-SA 4.0.',
+              style: _txt(12, cor: Colors.white30)),
         ]),
         const SizedBox(height: 28),
         _titulo('🎙️ Voz premium (ElevenLabs)'),

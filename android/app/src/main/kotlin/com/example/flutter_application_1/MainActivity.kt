@@ -76,9 +76,8 @@ class MainActivity : FlutterActivity() {
         canalVoz!!.setMethodCallHandler { call, result ->
             when (call.method) {
                 "ligarPalavra" -> {
-                    val chave = call.argument<String>("chave") ?: ""
                     val sens = (call.argument<Double>("sensibilidade") ?: 0.6).toFloat()
-                    result.success(ligarPalavra(chave, sens))
+                    result.success(ligarPalavra(sens))
                 }
                 "desligarPalavra" -> {
                     pararPalavra()
@@ -214,27 +213,29 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    // ── Palavra de ativação "Jarvis" (Porcupine, roda no tablet) ─────────────
-    private var porcupine: ai.picovoice.porcupine.PorcupineManager? = null
+    // ── Palavra de ativação "Hey Jarvis" (openWakeWord, roda no tablet) ──────
+    // Sem conta e sem chave: os modelos ficam dentro do app.
+    private var ouvido: OuvidoJarvis? = null
+    private var limiarOuvido = 0f
 
-    /** null = ligou; senão, o motivo da falha (ex.: chave inválida). */
-    private fun ligarPalavra(chave: String, sensibilidade: Float): String? {
-        pararPalavra()
-        if (chave.isBlank()) return "sem_chave"
+    /** null = ligou; senão, o motivo da falha. */
+    private fun ligarPalavra(sensibilidade: Float): String? {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), PEDIDO_MICROFONE)
             return "sem_permissao"
         }
+        // Sensibilidade alta = limiar baixo (ouve mais fácil, mais alarme falso).
+        val limiar = (1.1f - sensibilidade).coerceIn(0.2f, 0.85f)
         return try {
-            val p = ai.picovoice.porcupine.PorcupineManager.Builder()
-                .setAccessKey(chave)
-                .setKeyword(ai.picovoice.porcupine.Porcupine.BuiltInKeyword.JARVIS)
-                .setSensitivity(sensibilidade.coerceIn(0.1f, 0.95f))
-                .setErrorCallback { e -> android.util.Log.w("MlionJarvis", "porcupine: ${e.message}") }
-                .build(applicationContext) { _ -> runOnUiThread { aoOuvirPalavra() } }
-            p.start()
-            porcupine = p
-            android.util.Log.i("MlionJarvis", "ouvindo a palavra Jarvis")
+            // Os modelos são carregados uma vez; só a escuta liga/desliga.
+            if (ouvido == null || limiar != limiarOuvido) {
+                ouvido?.liberar()
+                ouvido = OuvidoJarvis(applicationContext, limiar) {
+                    runOnUiThread { aoOuvirPalavra() }
+                }
+                limiarOuvido = limiar
+            }
+            ouvido!!.iniciar()
             null
         } catch (e: Exception) {
             android.util.Log.w("MlionJarvis", "não ligou: ${e.message}")
@@ -243,15 +244,12 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun pararPalavra() {
-        val p = porcupine ?: return
-        porcupine = null
-        try { p.stop() } catch (_: Exception) {}
-        try { p.delete() } catch (_: Exception) {}
+        ouvido?.parar()
     }
 
     private fun aoOuvirPalavra() {
-        android.util.Log.i("MlionJarvis", "ouvi: Jarvis")
-        // O microfone vai para o reconhecimento da frase: solta o Porcupine.
+        android.util.Log.i("MlionJarvis", "ouvi: Hey Jarvis")
+        // O microfone vai para o reconhecimento da frase: solta a escuta.
         pararPalavra()
         if (cortina != null) {
             // Tela em descanso: acende antes de ouvir.
@@ -521,7 +519,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        pararPalavra()
+        ouvido?.liberar()
+        ouvido = null
         tts?.shutdown()
         DescansoService.aoAcordar = null
         reconhecedor?.destroy()

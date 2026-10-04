@@ -181,12 +181,13 @@ class Sistema {
   /// Ouviu "Jarvis" (conta a cada vez).
   static final ValueNotifier<int> palavraOuvida = ValueNotifier(0);
 
-  /// Liga a escuta da palavra "Jarvis". null = ligou; senão, o motivo.
-  static Future<String?> ligarPalavra(String chave, double sensibilidade) async {
+  /// Liga a escuta de "Hey Jarvis" (no próprio tablet, sem conta). null =
+  /// ligou; senão, o motivo.
+  static Future<String?> ligarPalavra(double sensibilidade) async {
     _prepararOuvinte();
     try {
       return await _canalVoz.invokeMethod<String>(
-          'ligarPalavra', {'chave': chave, 'sensibilidade': sensibilidade});
+          'ligarPalavra', {'sensibilidade': sensibilidade});
     } catch (e) {
       return '$e';
     }
