@@ -113,26 +113,33 @@ class BarraInfo extends StatelessWidget {
               ),
             ),
           ),
-          SizedBox(
-            height: alturaFaixa,
-            child: Stack(children: [
-              Positioned.fill(
-                // Espaço à direita para os pontinhos (o texto não passa por baixo).
-                right: comPontos ? r.sp(64 + telasRodizio.length * 13.0) : 0,
-                child: _Faixa(destaque: destaque),
+          // Faixa de frases/notícias em cápsula arredondada, "flutuando", com
+          // os pontinhos de navegação numa pílula própria ao lado.
+          Padding(
+            padding: EdgeInsets.fromLTRB(r.sp(24), 0, r.sp(24), r.sp(8)),
+            child: SizedBox(
+              height: alturaFaixa - r.sp(8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: _Faixa(destaque: destaque)),
+                  if (comPontos) ...[
+                    SizedBox(width: r.sp(10)),
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: r.sp(14)),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(r.sp(40)),
+                        border: Border.all(color: Cores.contorno),
+                      ),
+                      child: _Pontos(
+                          telas: telasRodizio, atual: telaAtual, cor: destaque),
+                    ),
+                  ],
+                ],
               ),
-              // Pontinhos de navegação: onde estou no rodízio (bem discretos).
-              if (comPontos)
-                Positioned(
-                  right: r.sp(32),
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: _Pontos(
-                        telas: telasRodizio, atual: telaAtual, cor: destaque),
-                  ),
-                ),
-            ]),
+            ),
           ),
         ],
       ),
@@ -420,10 +427,12 @@ class _FaixaState extends State<_Faixa> {
           texto = atual.replaceFirst(RegExp(r'^(💡|📰|🎵)\s*'), '');
         }
         return Container(
-          padding: EdgeInsets.symmetric(horizontal: r.sp(32)),
+          padding: EdgeInsets.symmetric(horizontal: r.sp(20)),
+          clipBehavior: Clip.antiAlias, // o texto rolando respeita a curva
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.16),
-            border: Border(top: BorderSide(color: Cores.contorno)),
+            color: Colors.black.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(r.sp(40)),
+            border: Border.all(color: Cores.contorno),
           ),
           child: Row(
             children: [
