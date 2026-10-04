@@ -1,3 +1,4 @@
+import '../cache_manager.dart';
 import '../config_manager.dart';
 import '../util.dart';
 import 'avisos_service.dart';
@@ -86,6 +87,7 @@ class JarvisService {
       parte(_manchetes),
       parte(_manchetesRegiao),
       parte(_manchetesTime),
+      parte(() => _contas(agora)),
     ]);
     final b = StringBuffer()
       ..writeln('Agora: ${diaSemanaLongo(agora).toLowerCase()}, ${agora.day} de '
@@ -146,6 +148,16 @@ class JarvisService {
         '${jogo.visitante.nome}, ${jogo.competicao}, ${diaSemanaLongo(jogo.data).toLowerCase()} '
         '${jogo.data.day}/${jogo.data.month} às ${horaMinuto(jogo.data)}'
         '${jogo.estadio.isNotEmpty ? ', ${jogo.estadio}' : ''}.';
+  }
+
+  Future<String?> _contas(DateTime agora) async {
+    final agenda = await CacheManager.instance
+        .obterEntrada<Map<String, dynamic>>('calendario_itens_v2');
+    if (agenda == null) return null;
+    final contas = contasProximas(agenda.dados, agora);
+    if (contas.isEmpty) return null;
+    return 'Contas a pagar (da agenda): '
+        '${contas.take(5).map((c) => '${c.titulo} (${c.quando}, dia ${c.data.day}/${c.data.month})').join('; ')}.';
   }
 
   Future<String?> _manchetesRegiao() async {
@@ -258,6 +270,26 @@ $contexto''';
     ));
   }
 
+  /// Resumo da noite: o que vem amanhã (agenda, contas, clima, jogo) e uma
+  /// notícia, falado quando o painel vê alguém à noite. null = sem IA.
+  Future<String?> resumoDaNoite() async {
+    if (!IaService.instance.configurado) return null;
+    final ctx = await contexto();
+    final nome = nomeUsuario;
+    return _semEmocao(await IaService.instance.responder(
+      sistema: sistema(ctx),
+      pergunta: 'Faça o resumo da noite, leve e rápido: '
+          '1) "Boa noite${nome.isEmpty ? '' : ', $nome'}"; '
+          '2) o que tem na agenda de AMANHÃ (ou que amanhã está livre); '
+          '3) contas a pagar que estão chegando, com quantos dias faltam; '
+          '4) o clima de amanhã e se vai precisar de guarda-chuva; '
+          '5) o jogo do time se for hoje à noite ou amanhã; '
+          '6) uma notícia importante do dia em uma frase; '
+          '7) uma frase curta de boa noite. '
+          '30 a 50 segundos falados. Pule o que não tiver. Texto corrido, sem listas.',
+    ));
+  }
+
   /// Briefing da manhã: um texto de 40 a 60 segundos escrito pela IA com os
   /// dados do dia. Sem IA, devolve null e o Bom Dia usa o resumo pronto.
   Future<String?> briefing(String saudacao) async {
@@ -268,7 +300,8 @@ $contexto''';
       sistema: sistema(ctx),
       pergunta: 'Faça o briefing da manhã, rápido e leve, nesta ordem: '
           '1) "$saudacao${nome.isEmpty ? '' : ', $nome'}", o dia e a hora de agora; '
-          '2) a agenda de hoje (compromissos, tarefas, aniversários) ou que o dia está livre; '
+          '2) a agenda de hoje (compromissos, tarefas, aniversários) ou que o dia está livre, '
+          'e as CONTAS A PAGAR dos próximos dias com quantos dias faltam (ex.: "o condomínio vence em 3 dias"); '
           '3) o clima, se precisa de guarda-chuva e alertas da Defesa Civil se houver; '
           '4) o próximo jogo do time (dia, hora e adversário); '
           '5) um resumão de uma ou duas manchetes da região e uma do time, em poucas palavras cada; '

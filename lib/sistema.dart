@@ -125,6 +125,23 @@ class Sistema {
   /// A câmera ainda vê alguém na frente depois de acender (conta a cada aviso).
   static final ValueNotifier<int> presenca = ValueNotifier(0);
 
+  /// Onde está a pessoa na frente da tela (-1 esquerda .. 1 direita), vista
+  /// pela câmera; o rosto do Jarvis olha para lá. Vale por ~1,5 s.
+  static double? posicaoPessoa;
+  static DateTime? posicaoEm;
+
+  static double? get posicaoRecente => posicaoEm != null &&
+          DateTime.now().difference(posicaoEm!) < const Duration(milliseconds: 1500)
+      ? posicaoPessoa
+      : null;
+
+  /// Inverte a direção do olhar (se o Jarvis olhar para o lado errado).
+  static Future<void> inverterOlhar(bool inverter) async {
+    try {
+      await _canal.invokeMethod('inverterOlhar', {'inverter': inverter});
+    } catch (_) {}
+  }
+
   /// Liga a escuta dos avisos do Android (sensores, presença). Chamado no
   /// início do app.
   static void iniciarEventos() => _prepararEventos();
@@ -139,6 +156,9 @@ class Sistema {
           acordouPorSensor.value = '${call.arguments}@${DateTime.now().millisecondsSinceEpoch}';
         case 'presenca':
           presenca.value++;
+        case 'posicao':
+          posicaoPessoa = (call.arguments as num?)?.toDouble();
+          posicaoEm = DateTime.now();
       }
     });
   }

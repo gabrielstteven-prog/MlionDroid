@@ -62,7 +62,13 @@ class _RostoJarvisState extends State<RostoJarvis> with SingleTickerProviderStat
       // De vez em quando, piscada dupla.
       _proximaPiscada = t + (_rnd.nextDouble() < 0.2 ? 0.35 : 2.5 + _rnd.nextDouble() * 3.5);
     }
-    if (t >= _proximoOlhar) {
+    // Alguém na frente (câmera): olha para onde a pessoa está, com um
+    // tremidinho leve para não parecer travado.
+    final pessoa = widget.estado == EstadoAssistente.pensando ? null : Sistema.posicaoRecente;
+    if (pessoa != null) {
+      _olharAlvo = Offset(pessoa * 0.95 + math.sin(t * 1.7) * 0.05, -0.05);
+      _proximoOlhar = t + 1.0;
+    } else if (t >= _proximoOlhar) {
       final pensando = widget.estado == EstadoAssistente.pensando;
       _olharAlvo = pensando
           ? Offset(_rnd.nextBool() ? 0.6 : -0.6, -0.7) // olha para cima, de lado

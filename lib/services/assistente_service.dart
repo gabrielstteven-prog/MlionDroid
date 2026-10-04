@@ -306,6 +306,27 @@ class AssistenteService extends ChangeNotifier {
   /// Modo ausente ("estou saindo"): a tela descansa até alguém chegar.
   final ValueNotifier<bool> ausente = ValueNotifier(false);
 
+  /// O Jarvis aparece e fala por iniciativa própria (resumo da noite,
+  /// avisos). Não abre conversa: depois de falar, some.
+  Future<void> anunciar(String texto) async {
+    if (estado != EstadoAssistente.parado) return; // não interrompe ninguém
+    ultimaFala = '';
+    ultimaFoto = null;
+    ultimoCard = null;
+    telaAberta = false;
+    _emocaoTexto = JarvisService.instance.ultimaEmocao;
+    ultimaResposta = texto;
+    estado = EstadoAssistente.respondendo;
+    notifyListeners();
+    await VozService.instance.falar(texto.replaceAll('°', ' graus'));
+    Timer(const Duration(seconds: 6), () {
+      if (estado == EstadoAssistente.respondendo && !_emConversa) {
+        estado = EstadoAssistente.parado;
+        notifyListeners();
+      }
+    });
+  }
+
   /// Boas-vindas quando alguém chega com o modo ausente ligado.
   Future<void> boasVindas() async {
     final nome = JarvisService.instance.nomeUsuario;

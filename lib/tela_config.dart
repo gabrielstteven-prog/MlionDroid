@@ -3230,6 +3230,46 @@ class _TelaConfigState extends State<TelaConfig>
             valorPadrao: false,
           ),
         ]),
+        const SizedBox(height: 28),
+        _sectionTitle('🌙 Resumo da noite'),
+        const SizedBox(height: 8),
+        Text(
+          'No horário abaixo, na primeira vez que a câmera vê alguém (ou no primeiro toque), '
+          'o Jarvis fala o que vem amanhã: agenda, contas a pagar, clima e jogo. Uma vez por dia.',
+          style: GoogleFonts.figtree(color: Colors.white54, fontSize: 13, height: 1.5),
+        ),
+        const SizedBox(height: 14),
+        _glassCard(children: [
+          _toggleConfig(
+            titulo: 'Jarvis faz o resumo da noite',
+            subtitulo: 'Quando te vê pela primeira vez no horário',
+            categoria: 'resumo_noite',
+            chave: 'ativo',
+            valorPadrao: true,
+          ),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+                child: Text('Das',
+                    style: GoogleFonts.figtree(color: Colors.white70, fontSize: 15))),
+            _horaPicker(
+                valor: config.getInt('resumo_noite', 'hora_inicio', 18),
+                min: 0,
+                max: 23,
+                onChanged: (v) => setState(() => config.set('resumo_noite', 'hora_inicio', v))),
+          ]),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+                child: Text('Até',
+                    style: GoogleFonts.figtree(color: Colors.white70, fontSize: 15))),
+            _horaPicker(
+                valor: config.getInt('resumo_noite', 'hora_fim', 22),
+                min: 0,
+                max: 23,
+                onChanged: (v) => setState(() => config.set('resumo_noite', 'hora_fim', v))),
+          ]),
+        ]),
 
         const SizedBox(height: 28),
 

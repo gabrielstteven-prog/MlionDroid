@@ -1,10 +1,36 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mlion_droid/cache_manager.dart';
 import 'package:mlion_droid/rodizio.dart';
+import 'package:mlion_droid/services/resumo_service.dart';
 import 'package:mlion_droid/update_manager.dart';
 import 'package:mlion_droid/util.dart';
 
 void main() {
+  group('Contas a pagar na agenda', () {
+    test('acha contas dos próximos dias e atrasadas não feitas', () {
+      final agora = DateTime(2026, 10, 4, 9);
+      final agenda = {
+        DateTime(2026, 10, 7).toIso8601String(): [
+          {'titulo': 'Pagar condomínio', 'tipo': 'tarefa', 'concluido': false},
+          {'titulo': 'Dentista', 'tipo': 'evento'},
+        ],
+        DateTime(2026, 10, 5).toIso8601String(): [
+          {'titulo': 'Boleto do apartamento', 'tipo': 'evento'},
+        ],
+        DateTime(2026, 10, 2).toIso8601String(): [
+          {'titulo': 'Pagar luz', 'tipo': 'tarefa', 'concluido': false},
+          {'titulo': 'Pagar internet', 'tipo': 'tarefa', 'concluido': true},
+        ],
+        DateTime(2026, 10, 20).toIso8601String(): [
+          {'titulo': 'Pagar IPVA', 'tipo': 'tarefa'},
+        ],
+      };
+      final c = contasProximas(agenda, agora);
+      expect(c.map((e) => e.titulo), ['Pagar luz', 'Boleto do apartamento', 'Pagar condomínio']);
+      expect(c.map((e) => e.quando), ['atrasada há 2 dias', 'amanhã', 'em 3 dias']);
+    });
+  });
+
   group('Descanso da tela', () {
     test('ausência agendada: seg–sex 8h–18h', () {
       const uteis = [1, 2, 3, 4, 5];

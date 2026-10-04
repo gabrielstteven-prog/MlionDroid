@@ -77,6 +77,14 @@ class ResumoService {
       }
     }
 
+    // ── Contas a pagar (agenda/tarefas dos próximos 7 dias) ──────────────
+    if (agenda != null) {
+      for (final c in contasProximas(agenda.dados, agora).take(3)) {
+        itens.add(ItemResumo(Icons.payments_rounded, '${c.titulo}: ${c.quando}.',
+            c.diasAte <= 1 ? const Color(0xFFFF8A65) : _amarelo));
+      }
+    }
+
     // ── Futebol ────────────────────────────────────────────────────────────
     final jogos = await FootballService.instance.proximosJogos();
     final jogo = jogos?.valor.firstOrNull;
@@ -118,4 +126,49 @@ class ResumoService {
     }
     return b.toString().replaceAll('°', ' graus').trim();
   }
+}
+
+/// Uma conta encontrada na agenda/tarefas ("Pagar condomínio").
+class ContaAPagar {
+  final String titulo;
+  final DateTime data;
+  final int diasAte; // 0 = hoje, 1 = amanhã, negativo = atrasada
+  const ContaAPagar(this.titulo, this.data, this.diasAte);
+
+  /// "hoje", "amanhã", "em 3 dias", "atrasada há 2 dias".
+  String get quando => switch (diasAte) {
+        0 => 'hoje',
+        1 => 'amanhã',
+        < 0 => 'atrasada há ${-diasAte} ${-diasAte == 1 ? 'dia' : 'dias'}',
+        _ => 'em $diasAte dias',
+      };
+}
+
+final _palavrasDeConta = RegExp(
+    r'\b(pagar|pagamento|paga|boleto|fatura|vencimento|vence|condominio|aluguel|'
+    r'parcela|iptu|ipva|mensalidade|financiamento|prestacao|conta de|contas)\b');
+
+/// Contas a pagar nos próximos [dias] (e as atrasadas dos últimos 7 dias
+/// que ainda não foram marcadas como feitas), a partir do cache da agenda
+/// ({ "2026-10-04T00:00:00.000": [ {titulo, tipo, concluido...} ] }).
+/// Função pura — testada.
+List<ContaAPagar> contasProximas(Map<String, dynamic> agenda, DateTime agora, {int dias = 7}) {
+  final hoje = soData(agora);
+  final contas = <ContaAPagar>[];
+  for (final e in agenda.entries) {
+    final data = DateTime.tryParse(e.key);
+    if (data == null) continue;
+    final diasAte = soData(data).difference(hoje).inDays;
+    if (diasAte > dias || diasAte < -7) continue;
+    for (final item in (e.value as List? ?? const []).whereType<Map>()) {
+      if (item['concluido'] == true || item['aniversario'] == true) continue;
+      final titulo = '${item['titulo'] ?? ''}'.trim();
+      if (!_palavrasDeConta.hasMatch(normalizar(titulo))) continue;
+      // Atrasada só conta se for tarefa (evento passado não tem "feito").
+      if (diasAte < 0 && item['tipo'] != 'tarefa') continue;
+      contas.add(ContaAPagar(titulo, soData(data), diasAte));
+    }
+  }
+  contas.sort((a, b) => a.diasAte.compareTo(b.diasAte));
+  return contas;
 }

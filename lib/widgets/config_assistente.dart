@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../config_manager.dart';
+import '../sistema.dart';
 import '../services/assistente_service.dart';
 import '../services/ia_service.dart';
 import '../services/jarvis_service.dart';
@@ -100,6 +101,29 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
               ),
           ]),
           const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+              child: Text('Olhar para quem está na frente (usa a câmera)',
+                  style: _txt(15, peso: FontWeight.w600)),
+            ),
+            Switch(
+              value: _cfg.getBool('assistente', 'olhar_pessoa', true),
+              onChanged: (v) => setState(() => _cfg.set('assistente', 'olhar_pessoa', v)),
+            ),
+          ]),
+          Row(children: [
+            Expanded(
+              child: Text('Ele olha para o lado errado? Inverter',
+                  style: _txt(14, cor: Colors.white60)),
+            ),
+            Switch(
+              value: _cfg.getBool('assistente', 'inverter_olhar', false),
+              onChanged: (v) {
+                setState(() => _cfg.set('assistente', 'inverter_olhar', v));
+                Sistema.inverterOlhar(v);
+              },
+            ),
+          ]),
           Row(children: [
             Expanded(
               child: Text('Conversa contínua (ele volta a ouvir depois de responder)',

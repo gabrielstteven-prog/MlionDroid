@@ -14,6 +14,7 @@ import 'services/voz_service.dart';
 import 'services/assistente_service.dart';
 import 'services/football_service.dart';
 import 'services/google_auth_service.dart';
+import 'services/jarvis_service.dart';
 import 'widgets/camada_assistente.dart';
 import 'sistema.dart';
 import 'tela_bom_dia.dart';
@@ -171,6 +172,29 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     AssistenteService.instance.ausente.addListener(_modoAusente);
     Sistema.iniciarEventos();
     AssistenteService.instance.sincronizarPalavra(); // "Jarvis" sem tocar
+    AssistenteService.instance.addListener(_assistenteMudou);
+    Sistema.inverterOlhar(config.getBool('assistente', 'inverter_olhar', false));
+  }
+
+  // ── Câmera enquanto o Jarvis está na tela: os olhos seguem a pessoa ──────
+  bool _cameraPeloAssistente = false;
+
+  bool get _cameraEmUsoPorOutro =>
+      _aguardandoBomDia ||
+      _aguardandoNoite ||
+      _modoNoite ||
+      (_noiteDispensadaAte != null && DateTime.now().isBefore(_noiteDispensadaAte!));
+
+  void _assistenteMudou() {
+    final ativo = AssistenteService.instance.estado != EstadoAssistente.parado;
+    if (ativo && !_cameraPeloAssistente) {
+      if (!config.getBool('assistente', 'olhar_pessoa', true)) return;
+      _cameraPeloAssistente = true;
+      if (!_cameraEmUsoPorOutro) Sistema.observarPresenca();
+    } else if (!ativo && _cameraPeloAssistente) {
+      _cameraPeloAssistente = false;
+      if (!_cameraEmUsoPorOutro) Sistema.pararDescanso();
+    }
   }
 
   @override
@@ -183,6 +207,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     AssistenteService.instance.pedidoDeTela.removeListener(_pedidoDoAssistente);
     FootballService.instance.ultimoLance.removeListener(_lanceDoJogo);
     Sistema.acordouPorSensor.removeListener(_acordouPorSensor);
+    AssistenteService.instance.removeListener(_assistenteMudou);
     Sistema.presenca.removeListener(_presenca);
     AssistenteService.instance.ausente.removeListener(_modoAusente);
     super.dispose();
@@ -191,6 +216,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
   // ── Modo Noite ───────────────────────────────────────────────────────────
   void _avaliarModoNoite() {
     _checarBomDia();
+    _checarResumoNoite();
     final agora = DateTime.now();
     final noite = config.getBool('noite', 'ativo', true) &&
         horaNaJanela(agora.hour, config.getInt('noite', 'hora_inicio', 23),
@@ -282,6 +308,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
   void _presenca() {
     _adiarApagao();
     _dispararBomDia();
+    _dispararResumoNoite();
   }
 
   // ── Bom dia ao ver alguém ────────────────────────────────────────────────
@@ -313,6 +340,45 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     Sistema.observarPresenca();
   }
 
+  // ── Resumo da noite ao ver alguém ────────────────────────────────────────
+  // Mesma ideia do Bom Dia, no horário da noite (padrão 18h–22h): na primeira
+  // vez que vê alguém, o Jarvis fala o que vem amanhã (agenda, contas,
+  // clima, jogo) — uma vez por dia.
+  bool _aguardandoNoite = false;
+  String _noiteChecadaEm = '';
+
+  String get _chaveNoiteFalada {
+    final h = DateTime.now();
+    return 'resumo_noite_falado_${h.year}_${h.month}_${h.day}';
+  }
+
+  Future<void> _checarResumoNoite() async {
+    if (!config.getBool('resumo_noite', 'ativo', true)) return;
+    final agora = DateTime.now();
+    if (!horaNaJanela(agora.hour, config.getInt('resumo_noite', 'hora_inicio', 18),
+        config.getInt('resumo_noite', 'hora_fim', 22))) {
+      _aguardandoNoite = false;
+      return;
+    }
+    final hoje = '${agora.year}-${agora.month}-${agora.day}';
+    if (_noiteChecadaEm == hoje || _modoNoite) return;
+    _noiteChecadaEm = hoje;
+    if (await CacheManager.instance.obterEntrada<bool>(_chaveNoiteFalada) != null) return;
+    _aguardandoNoite = true;
+    Sistema.observarPresenca();
+  }
+
+  Future<void> _dispararResumoNoite() async {
+    if (!_aguardandoNoite || _modoNoite || !mounted) return;
+    _aguardandoNoite = false;
+    await CacheManager.instance.salvar(_chaveNoiteFalada, true);
+    if (_noiteDispensadaAte == null || DateTime.now().isAfter(_noiteDispensadaAte!)) {
+      Sistema.pararDescanso();
+    }
+    final texto = await JarvisService.instance.resumoDaNoite();
+    if (texto != null && mounted) AssistenteService.instance.anunciar(texto);
+  }
+
   void _dispararBomDia() {
     if (!_aguardandoBomDia || _modoNoite || !mounted) return;
     _aguardandoBomDia = false;
@@ -333,6 +399,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     final motivo = Sistema.acordouPorSensor.value;
     if (motivo == null) return;
     _dispararBomDia();
+    _dispararResumoNoite();
     if (_ausenteManual) {
       // Chegou em casa: sai do modo ausente, para de vigiar e dá as boas-vindas.
       AssistenteService.instance.ausente.value = false;
@@ -615,6 +682,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
               behavior: HitTestBehavior.translucent,
               onPointerDown: (_) {
                 _dispararBomDia();
+                _dispararResumoNoite();
                 _adiarApagao();
                 _entrarModoManual();
               },

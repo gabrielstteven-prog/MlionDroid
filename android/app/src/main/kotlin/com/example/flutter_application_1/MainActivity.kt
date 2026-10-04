@@ -108,6 +108,9 @@ class MainActivity : FlutterActivity() {
         DescansoService.aoPresenca = {
             runOnUiThread { canalSistema?.invokeMethod("presenca", null) }
         }
+        DescansoService.aoPosicao = { x ->
+            runOnUiThread { canalSistema?.invokeMethod("posicao", x) }
+        }
         canalSistema!!.setMethodCallHandler { call, result ->
             when (call.method) {
                 "manterTelaLigada" -> {
@@ -198,6 +201,10 @@ class MainActivity : FlutterActivity() {
                     } else {
                         result.success(false)
                     }
+                }
+                "inverterOlhar" -> {
+                    DescansoService.inverterOlhar = call.argument<Boolean>("inverter") ?: false
+                    result.success(null)
                 }
                 "pararDescanso" -> {
                     DescansoService.parar(this)

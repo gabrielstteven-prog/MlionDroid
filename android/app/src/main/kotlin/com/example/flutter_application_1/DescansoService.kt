@@ -55,6 +55,12 @@ class DescansoService : Service(), SensorEventListener {
         /** Depois de acender: a câmera ainda vê alguém na frente (a cada ~10 s). */
         var aoPresenca: (() -> Unit)? = null
 
+        /** Posição horizontal da pessoa vista da tela (-1 esquerda .. 1 direita). */
+        var aoPosicao: ((Double) -> Unit)? = null
+
+        /** Se os olhos seguirem para o lado contrário, inverte (Configurações). */
+        var inverterOlhar = false
+
         /** [soPresenca]: tela acesa, só observa se há alguém (antes de apagar). */
         fun iniciar(ctx: Context, luz: Boolean, proximidade: Boolean, camera: Boolean,
                     soPresenca: Boolean = false) {
@@ -81,6 +87,7 @@ class DescansoService : Service(), SensorEventListener {
     private var presenca = false
     private var ultimaPresenca = 0L
     private var camHandler: Handler? = null
+    private var orientacaoSensor = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -192,6 +199,8 @@ class DescansoService : Service(), SensorEventListener {
                 cm.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) ==
                     CameraCharacteristics.LENS_FACING_FRONT
             } ?: cm.cameraIdList.firstOrNull() ?: return
+            orientacaoSensor = cm.getCameraCharacteristics(id)
+                .get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
             val mapa = cm.getCameraCharacteristics(id)
                 .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
             // Menor tamanho com pelo menos 240 px de largura (leve e suficiente).
@@ -239,6 +248,34 @@ class DescansoService : Service(), SensorEventListener {
         } catch (e: Exception) {
             Log.w(TAG, "câmera indisponível: $e")
         }
+    }
+
+    /**
+     * Converte o centro do movimento (coordenadas do sensor, -1..1) na posição
+     * horizontal da pessoa vista DA TELA (-1 = esquerda, 1 = direita), para os
+     * olhos do Jarvis seguirem quem está na frente. Considera a rotação do
+     * sensor e da tela; a câmera da frente "espelha" esquerda e direita.
+     */
+    private fun avisarPosicao(u: Double, v: Double) {
+        @Suppress("DEPRECATION")
+        val rotTela = when ((getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager)
+            .defaultDisplay.rotation) {
+            android.view.Surface.ROTATION_90 -> 90
+            android.view.Surface.ROTATION_180 -> 180
+            android.view.Surface.ROTATION_270 -> 270
+            else -> 0
+        }
+        // Gira a imagem do sensor até ela ficar "em pé" (como numa foto).
+        val (uEmPe, _) = when ((orientacaoSensor + rotTela) % 360) {
+            90 -> Pair(-v, u)
+            180 -> Pair(-u, -v)
+            270 -> Pair(v, -u)
+            else -> Pair(u, v)
+        }
+        // Na foto da câmera da frente, quem está à esquerda da tela aparece à
+        // direita da imagem.
+        val x = (if (inverterOlhar) uEmPe else -uEmPe).coerceIn(-1.0, 1.0)
+        aoPosicao?.invoke(x)
     }
 
     private fun repetir(travar: Boolean, h: Handler) {
@@ -293,11 +330,24 @@ class DescansoService : Service(), SensorEventListener {
             return
         }
 
-        // Mudou quantos pontos da imagem (movimento)?
+        // Mudou quantos pontos da imagem (movimento)? E onde (centro da mudança)?
         val ant = anterior
         var mudaram = 0
+        var somaU = 0.0
+        var somaV = 0.0
+        val colunas = (w - passo) / passo + 1
+        val linhas = maxOf(1, n / colunas)
         if (ant != null) {
-            for (i in 0 until n) if (kotlin.math.abs(amostras[i] - ant[i]) > 28) mudaram++
+            for (i in 0 until n) {
+                if (kotlin.math.abs(amostras[i] - ant[i]) > 28) {
+                    mudaram++
+                    somaU += (i % colunas).toDouble() / colunas * 2 - 1
+                    somaV += (i / colunas).toDouble() / linhas * 2 - 1
+                }
+            }
+        }
+        if (presenca && mudaram > n * 0.02 && media > 30) {
+            avisarPosicao(somaU / mudaram, somaV / mudaram)
         }
         anterior = amostras
         val fracao = mudaram.toDouble() / n
