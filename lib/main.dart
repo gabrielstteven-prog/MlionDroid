@@ -15,6 +15,7 @@ import 'services/assistente_service.dart';
 import 'services/football_service.dart';
 import 'services/google_auth_service.dart';
 import 'services/jarvis_service.dart';
+import 'services/telegram_service.dart';
 import 'widgets/camada_assistente.dart';
 import 'sistema.dart';
 import 'tela_bom_dia.dart';
@@ -174,6 +175,8 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     AssistenteService.instance.sincronizarPalavra(); // "Jarvis" sem tocar
     AssistenteService.instance.addListener(_assistenteMudou);
     Sistema.inverterOlhar(config.getBool('assistente', 'inverter_olhar', false));
+    TelegramService.instance.iniciar(); // a casa pelo celular
+    TelegramService.instance.cameraUsada.addListener(_rearmarCamera);
   }
 
   // ── Câmera enquanto o Jarvis está na tela: os olhos seguem a pessoa ──────
@@ -228,6 +231,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
           config.getInt('ausente', 'hora_inicio', 8),
           config.getInt('ausente', 'hora_fim', 18),
         );
+    _ausenteAgendaAgora = ausenteAgenda;
     final emDescanso = noite || ausenteAgenda || _ausenteManual;
     // Começou o horário de descanso (noite ou ausência agendada): antes de
     // apagar, a câmera confere se tem alguém em casa. Com movimento (dia de
@@ -266,12 +270,8 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
               ausenteAgenda && !noite
                   ? config.getInt('ausente', 'hora_fim', 18)
                   : config.getInt('noite', 'hora_fim', 6));
-      Sistema.desligarTela(
-        acordarEm: fim,
-        luz: config.getBool('noite', 'acordar_com_luz', true),
-        proximidade: config.getBool('noite', 'acordar_com_proximidade', false),
-        camera: config.getBool('noite', 'acordar_com_camera', true),
-      );
+      _acordarDescansoEm = fim;
+      _desligarComSensores();
     }
     if (!deveFicar) {
       _ultimaTrocaDeTela = DateTime.now();
@@ -292,6 +292,27 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
 
   /// Já estava no horário de descanso na última avaliação (detecta a entrada).
   bool _estavaEmDescanso = false;
+
+  bool _ausenteAgendaAgora = false;
+  DateTime _acordarDescansoEm = DateTime.now();
+
+  void _desligarComSensores() => Sistema.desligarTela(
+        acordarEm: _acordarDescansoEm,
+        luz: config.getBool('noite', 'acordar_com_luz', true),
+        proximidade: config.getBool('noite', 'acordar_com_proximidade', false),
+        camera: config.getBool('noite', 'acordar_com_camera', true),
+      );
+
+  /// Depois de uma foto/áudio pelo Telegram: a câmera e o microfone voltam
+  /// para quem estava usando (descanso, presença, "Hey Jarvis").
+  void _rearmarCamera() {
+    AssistenteService.instance.sincronizarPalavra(forcar: true);
+    if (_modoNoite && _telaDesligada) {
+      _desligarComSensores();
+    } else if (_cameraEmUsoPorOutro || _cameraPeloAssistente) {
+      Sistema.observarPresenca();
+    }
+  }
 
   /// "Jarvis, estou saindo": tela em descanso até alguém chegar.
   bool _ausenteManual = false;
@@ -398,6 +419,10 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
   void _acordouPorSensor() {
     final motivo = Sistema.acordouPorSensor.value;
     if (motivo == null) return;
+    // Modo Ausente: movimento na câmera (não toque) manda foto pelo Telegram.
+    if ((_ausenteManual || _ausenteAgendaAgora) && !motivo.startsWith('toque')) {
+      TelegramService.instance.alertaMovimento();
+    }
     _dispararBomDia();
     _dispararResumoNoite();
     if (_ausenteManual) {

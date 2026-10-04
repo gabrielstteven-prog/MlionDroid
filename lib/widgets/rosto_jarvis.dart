@@ -48,6 +48,7 @@ class _RostoJarvisState extends State<RostoJarvis> with SingleTickerProviderStat
   Offset _olharAlvo = Offset.zero;
   Offset _olhar = Offset.zero;
   double _ultimo = 0;
+  double _boca = 0; // abertura suavizada (0..1)
 
   double get _segundos => _c.lastElapsedDuration == null
       ? 0
@@ -79,6 +80,15 @@ class _RostoJarvisState extends State<RostoJarvis> with SingleTickerProviderStat
     }
     // Movimento suave até o alvo (olhos "deslizam", não pulam).
     _olhar = Offset.lerp(_olhar, _olharAlvo, (dt * 7).clamp(0.0, 1.0))!;
+    // Boca: segue o volume REAL da voz (abre rápido, fecha um pouco mais
+    // devagar, como uma boca de verdade). Sem medição, ritmo simulado.
+    final medido = Sistema.nivelFalaRecente;
+    final alvo = widget.estado != EstadoAssistente.respondendo
+        ? 0.0
+        : medido ??
+            (0.5 + 0.5 * math.sin(t * 14)) * (0.6 + 0.4 * math.sin(t * 5.3 + 1));
+    final velocidade = alvo > _boca ? 30.0 : 14.0;
+    _boca += (alvo - _boca) * (dt * velocidade).clamp(0.0, 1.0);
   }
 
   @override
@@ -108,6 +118,7 @@ class _RostoJarvisState extends State<RostoJarvis> with SingleTickerProviderStat
                 olhar: _olhar,
                 piscada: fechado,
                 volume: widget.estado == EstadoAssistente.ouvindo ? Sistema.volumeVoz.value : 0,
+                boca: _boca,
               ),
             );
           },
@@ -124,6 +135,7 @@ class _PintorRosto extends CustomPainter {
   final Offset olhar; // -1..1
   final double piscada; // 0 aberto .. 1 fechado
   final double volume; // 0..1 (ouvindo)
+  final double boca; // 0..1 abertura ao falar (volume real da voz)
 
   _PintorRosto({
     required this.t,
@@ -132,6 +144,7 @@ class _PintorRosto extends CustomPainter {
     required this.olhar,
     required this.piscada,
     required this.volume,
+    required this.boca,
   });
 
   static const _branco = Color(0xFFF2F6FF);
@@ -248,8 +261,8 @@ class _PintorRosto extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     if (estado == EstadoAssistente.respondendo) {
-      // Falando: boca abre e fecha num ritmo irregular, como sílabas.
-      final abre = (0.5 + 0.5 * math.sin(t * 14)) * (0.6 + 0.4 * math.sin(t * 5.3 + 1));
+      // Falando: a boca abre conforme o volume da voz naquele instante.
+      final abre = boca;
       final alt = w * (0.02 + 0.07 * abre);
       final larguraFala = emocao == Emocao.feliz ? larg * 1.1 : larg * 0.9;
       canvas.drawRRect(

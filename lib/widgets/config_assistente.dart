@@ -6,6 +6,7 @@ import '../sistema.dart';
 import '../services/assistente_service.dart';
 import '../services/ia_service.dart';
 import '../services/jarvis_service.dart';
+import '../services/telegram_service.dart';
 import '../services/voz_service.dart';
 
 /// Seção "Assistente (Jarvis)" das Configurações: chaves de IA e de voz,
@@ -281,6 +282,10 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
             Expanded(child: Text(_statusVoz, style: _txt(14, cor: Colors.white))),
           ]),
         ]),
+        const SizedBox(height: 28),
+        _titulo('📱 Casa pelo celular (Telegram)'),
+        const SizedBox(height: 14),
+        _secaoTelegram(),
         const SizedBox(height: 20),
         Text(
           'As chaves ficam guardadas só neste tablet. Não compartilhe prints desta tela.',
@@ -288,6 +293,94 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
         ),
       ],
     );
+  }
+
+  Widget _secaoTelegram() {
+    final tg = TelegramService.instance;
+    return _card([
+      Text(
+        'Peça pelo celular, de qualquer lugar: /foto (foto agora pela câmera do painel), '
+        '/audio 15 (15 segundos de áudio da casa) e /status. No Modo Ausente, se a câmera '
+        'vir movimento, o painel manda uma foto sozinho.',
+        style: _txt(14),
+      ),
+      const SizedBox(height: 14),
+      Text('Como configurar (uma vez só):', style: _txt(14, peso: FontWeight.w700)),
+      const SizedBox(height: 6),
+      Text(
+        '1. No Telegram do celular, abra o @BotFather e mande /newbot.\n'
+        '2. Escolha um nome (ex.: Casa do Gabriel) e um usuário terminado em "bot".\n'
+        '3. Ele responde com um TOKEN: copie e cole abaixo, depois toque em Conectar.\n'
+        '4. Abra o seu bot no Telegram e mande o código de pareamento que vai aparecer aqui.',
+        style: _txt(13.5, cor: Colors.white60),
+      ),
+      const SizedBox(height: 14),
+      _campo('token', 'Token do bot', '123456789:ABC...', Icons.key_rounded,
+          secreto: true, categoria: 'telegram'),
+      Row(children: [
+        _botao('Conectar', Icons.link_rounded, () async {
+          await _cfg.salvar();
+          await tg.reiniciar();
+          if (mounted) setState(() {});
+        }),
+        const SizedBox(width: 14),
+        Expanded(
+          child: ValueListenableBuilder<String>(
+            valueListenable: tg.status,
+            builder: (_, s, __) => Text(s, style: _txt(14, cor: Colors.white)),
+          ),
+        ),
+      ]),
+      if (tg.configurado && !tg.pareado) ...[
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: _accent.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _accent.withValues(alpha: 0.4)),
+          ),
+          child: Row(children: [
+            const Icon(Icons.pin_rounded, color: _accent),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('No seu bot, mande:  /parear ${tg.codigo}',
+                  style: _txt(18, cor: Colors.white, peso: FontWeight.w700)),
+            ),
+          ]),
+        ),
+      ],
+      if (tg.pareado) ...[
+        const SizedBox(height: 14),
+        Row(children: [
+          const Icon(Icons.verified_rounded, color: Colors.greenAccent, size: 22),
+          const SizedBox(width: 10),
+          Expanded(child: Text('Pareado com o seu celular.', style: _txt(14, cor: Colors.white))),
+          TextButton(
+            onPressed: () async {
+              await tg.desparear();
+              if (mounted) setState(() {});
+            },
+            child: const Text('Desparear'),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Row(children: [
+          _botao('Testar: mandar uma foto', Icons.photo_camera_rounded,
+              () => tg.enviarFotoAgora('Teste do painel 👋')),
+        ]),
+      ],
+      const SizedBox(height: 12),
+      Row(children: [
+        Expanded(
+          child: Text('Alerta com foto no Modo Ausente', style: _txt(15, peso: FontWeight.w600)),
+        ),
+        Switch(
+          value: _cfg.getBool('telegram', 'alerta_ausente', true),
+          onChanged: (v) => setState(() => _cfg.set('telegram', 'alerta_ausente', v)),
+        ),
+      ]),
+    ]);
   }
 
   Future<void> _testarIa() async {
@@ -397,7 +490,7 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
       );
 
   Widget _campo(String chave, String rotulo, String dica, IconData icone,
-      {bool secreto = false}) {
+      {bool secreto = false, String categoria = 'assistente'}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Column(
@@ -410,8 +503,8 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
           ]),
           const SizedBox(height: 8),
           TextFormField(
-            key: ValueKey('assistente_$chave'),
-            initialValue: _cfg.getString('assistente', chave, ''),
+            key: ValueKey('${categoria}_$chave'),
+            initialValue: _cfg.getString(categoria, chave, ''),
             obscureText: secreto,
             autocorrect: false,
             enableSuggestions: !secreto,
@@ -432,7 +525,7 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
                   borderSide: const BorderSide(color: _accent)),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
-            onChanged: (v) => _cfg.set('assistente', chave, v.trim()),
+            onChanged: (v) => _cfg.set(categoria, chave, v.trim()),
           ),
         ],
       ),

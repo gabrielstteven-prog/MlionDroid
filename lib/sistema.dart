@@ -111,6 +111,16 @@ class Sistema {
     }
   }
 
+  /// Grava [segundos] do microfone (Telegram /audio). Caminho do .m4a ou null.
+  static Future<String?> gravarAudio(int segundos) async {
+    try {
+      return await _canal.invokeMethod<String>('gravarAudio', {'segundos': segundos});
+    } catch (e) {
+      debugPrint('Sistema.gravarAudio: $e');
+      return null;
+    }
+  }
+
   /// Para de vigiar os sensores do descanso.
   static Future<void> pararDescanso() async {
     try {
@@ -127,6 +137,16 @@ class Sistema {
 
   /// Onde está a pessoa na frente da tela (-1 esquerda .. 1 direita), vista
   /// pela câmera; o rosto do Jarvis olha para lá. Vale por ~1,5 s.
+  /// Volume da voz do Jarvis agora (0..1), medido no áudio que está tocando:
+  /// a boca do rosto abre junto com o som.
+  static double nivelFala = 0;
+  static DateTime? nivelFalaEm;
+
+  static double? get nivelFalaRecente => nivelFalaEm != null &&
+          DateTime.now().difference(nivelFalaEm!) < const Duration(milliseconds: 300)
+      ? nivelFala
+      : null;
+
   static double? posicaoPessoa;
   static DateTime? posicaoEm;
 
@@ -156,6 +176,9 @@ class Sistema {
           acordouPorSensor.value = '${call.arguments}@${DateTime.now().millisecondsSinceEpoch}';
         case 'presenca':
           presenca.value++;
+        case 'nivelFala':
+          nivelFala = (call.arguments as num?)?.toDouble() ?? 0;
+          nivelFalaEm = DateTime.now();
         case 'posicao':
           posicaoPessoa = (call.arguments as num?)?.toDouble();
           posicaoEm = DateTime.now();

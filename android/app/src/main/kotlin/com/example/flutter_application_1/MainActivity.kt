@@ -189,6 +189,15 @@ class MainActivity : FlutterActivity() {
                         }, 500)
                     }
                 }
+                "gravarAudio" -> {
+                    // "/audio" do Telegram: grava N segundos do microfone em AAC (.m4a).
+                    val seg = (call.argument<Int>("segundos") ?: 15).coerceIn(3, 60)
+                    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                        result.success(null)
+                    } else {
+                        gravarAudio(seg) { caminho -> runOnUiThread { result.success(caminho) } }
+                    }
+                }
                 "pedirCamera" -> {
                     requestPermissions(arrayOf(Manifest.permission.CAMERA), 78)
                     result.success(null)
@@ -222,6 +231,35 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    // ── Gravação de áudio (Telegram /audio) ─────────────────────────────────
+    private fun gravarAudio(segundos: Int, aoTerminar: (String?) -> Unit) {
+        // O microfone é um só: pausa a escuta do "Hey Jarvis" durante a gravação.
+        pararPalavra()
+        val arq = java.io.File(cacheDir, "audio_casa.m4a")
+        val rec = try {
+            ("DEPRECATION")
+            android.media.MediaRecorder().apply {
+                setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+                setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
+                setAudioSamplingRate(44100)
+                setAudioEncodingBitRate(96_000)
+                setOutputFile(arq.absolutePath)
+                prepare()
+                start()
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MlionCasa", "gravação: $e")
+            aoTerminar(null)
+            return
+        }
+        window.decorView.postDelayed({
+            try { rec.stop() } catch (_: Exception) {}
+            rec.release()
+            aoTerminar(if (arq.exists() && arq.length() > 0) arq.absolutePath else null)
+        }, segundos * 1000L)
     }
 
     // ── Palavra de ativação "Hey Jarvis" (openWakeWord, roda no tablet) ──────
@@ -359,10 +397,24 @@ class MainActivity : FlutterActivity() {
 
     private val ouvinteFala = object : android.speech.tts.UtteranceProgressListener() {
         override fun onStart(utteranceId: String?) {}
-        override fun onDone(utteranceId: String?) { runOnUiThread { concluirFala() } }
+        override fun onDone(utteranceId: String?) {
+            runOnUiThread {
+                // A fala foi gerada em arquivo: toca medindo o volume (boca sincronizada).
+                if (utteranceId == "sintese") tocarArquivo(arquivoFala.path) { concluirFala() }
+                else concluirFala()
+            }
+        }
         @Deprecated("Mantido por compatibilidade")
         override fun onError(utteranceId: String?) { runOnUiThread { concluirFala() } }
         override fun onStop(utteranceId: String?, interrupted: Boolean) { runOnUiThread { concluirFala() } }
+    }
+
+    private val arquivoFala by lazy { java.io.File(cacheDir, "fala_tts.wav") }
+
+    /** Gera a fala num arquivo e toca com o medidor (a boca acompanha o som). */
+    private fun sintetizar(texto: String) {
+        val ok = tts?.synthesizeToFile(texto, volumeMaximo(), arquivoFala, "sintese")
+        if (ok != TextToSpeech.SUCCESS) tts?.speak(texto, TextToSpeech.QUEUE_FLUSH, volumeMaximo(), "mlion")
     }
 
     private fun falar(texto: String) {
@@ -382,7 +434,7 @@ class MainActivity : FlutterActivity() {
                             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                             .build()
                     )
-                    falaPendente?.let { tts?.speak(it, TextToSpeech.QUEUE_FLUSH, volumeMaximo(), "mlion") }
+                    falaPendente?.let { sintetizar(it) }
                     falaPendente = null
                 } else {
                     concluirFala() // sem motor de voz: não deixa ninguém esperando
@@ -390,18 +442,22 @@ class MainActivity : FlutterActivity() {
             }
             return
         }
-        if (ttsPronto) tts?.speak(texto, TextToSpeech.QUEUE_FLUSH, volumeMaximo(), "mlion")
+        if (ttsPronto) sintetizar(texto)
         else concluirFala()
     }
 
     // ── Áudio pronto (voz da ElevenLabs em MP3) ────────────────────────────
     private var player: MediaPlayer? = null
-    private var playerResult: MethodChannel.Result? = null
+    private var playerFim: ((Boolean) -> Unit)? = null
 
-    private fun tocarAudio(caminho: String, result: MethodChannel.Result) {
+    private fun tocarAudio(caminho: String, result: MethodChannel.Result) =
+        tocarArquivo(caminho) { ok -> result.success(ok) }
+
+    /** Toca um arquivo de voz e mede o volume para a boca do Jarvis mexer junto. */
+    private fun tocarArquivo(caminho: String, aoTerminar: (Boolean) -> Unit) {
         pararAudio()
         tts?.stop()
-        playerResult = result
+        playerFim = aoTerminar
         try {
             val p = MediaPlayer()
             p.setAudioAttributes(
@@ -416,6 +472,7 @@ class MainActivity : FlutterActivity() {
             p.setOnErrorListener { _, _, _ -> terminarAudio(false); true }
             p.prepare()
             reforcarVolume(p.audioSessionId)
+            medirVoz(p.audioSessionId)
             p.start()
             player = p
         } catch (e: Exception) {
@@ -426,10 +483,53 @@ class MainActivity : FlutterActivity() {
     private fun terminarAudio(ok: Boolean) {
         reforco?.release()
         reforco = null
+        medidor?.release()
+        medidor = null
+        canalSistema?.invokeMethod("nivelFala", 0.0)
         player?.release()
         player = null
-        playerResult?.success(ok)
-        playerResult = null
+        val fim = playerFim
+        playerFim = null
+        fim?.invoke(ok)
+    }
+
+    // ── Volume da voz em tempo real (boca do Jarvis sincronizada) ───────────
+    private var medidor: android.media.audiofx.Visualizer? = null
+    private var ultimoNivel = 0L
+
+    private fun medirVoz(sessao: Int) {
+        try {
+            medidor?.release()
+            val faixa = android.media.audiofx.Visualizer.getCaptureSizeRange()
+            medidor = android.media.audiofx.Visualizer(sessao).apply {
+                captureSize = 256.coerceIn(faixa[0], faixa[1])
+                setDataCaptureListener(object : android.media.audiofx.Visualizer.OnDataCaptureListener {
+                    override fun onWaveFormDataCapture(
+                        v: android.media.audiofx.Visualizer?, onda: ByteArray?, taxa: Int
+                    ) {
+                        if (onda == null) return
+                        val agora = android.os.SystemClock.elapsedRealtime()
+                        if (agora - ultimoNivel < 30) return
+                        ultimoNivel = agora
+                        // Onda em 8 bits sem sinal (128 = silêncio): volume RMS 0..1.
+                        var soma = 0.0
+                        for (b in onda) {
+                            val x = ((b.toInt() and 0xFF) - 128) / 128.0
+                            soma += x * x
+                        }
+                        val nivel = (Math.sqrt(soma / onda.size) * 3.2).coerceIn(0.0, 1.0)
+                        runOnUiThread { canalSistema?.invokeMethod("nivelFala", nivel) }
+                    }
+
+                    override fun onFftDataCapture(
+                        v: android.media.audiofx.Visualizer?, fft: ByteArray?, taxa: Int
+                    ) {}
+                }, android.media.audiofx.Visualizer.getMaxCaptureRate(), true, false)
+                enabled = true
+            }
+        } catch (e: Exception) {
+            medidor = null // sem medidor: a boca usa o ritmo simulado
+        }
     }
 
     // Reforço de volume (+8 dB) na voz: alto-falante de tablet é fraco.

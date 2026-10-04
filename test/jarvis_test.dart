@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mlion_droid/services/ia_service.dart';
 import 'package:mlion_droid/services/jarvis_service.dart';
+import 'package:mlion_droid/services/telegram_service.dart';
 import 'package:mlion_droid/services/voz_service.dart';
 
 void main() {
@@ -60,6 +61,12 @@ void main() {
     expect(JarvisService.separarEmocao('[feliz] Bom dia!'), ('feliz', 'Bom dia!'));
     expect(JarvisService.separarEmocao('Sem etiqueta.'), ('', 'Sem etiqueta.'));
     expect(JarvisService.separarEmocao('{"acao":"tela","emocao":"bravo"}').$1, 'bravo');
+  });
+
+  test('Telegram: comando e argumento (com @NomeDoBot)', () {
+    expect(TelegramService.separarComando('/foto'), ('foto', null));
+    expect(TelegramService.separarComando('/audio@CasaBot 20'), ('audio', '20'));
+    expect(TelegramService.separarComando('/parear 123456'), ('parear', '123456'));
   });
 
   test('ElevenLabs: lista de vozes', () {
