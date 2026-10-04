@@ -55,14 +55,15 @@ class BarraInfo extends StatelessWidget {
 
   static double alturaTotal(BuildContext context) {
     final sh = MediaQuery.of(context).size.height;
-    return (sh * 0.16).clamp(110.0, 180.0);
+    // +4: a folguinha entre o relógio e a faixa de notícias.
+    return (sh * 0.15).clamp(104.0, 164.0) + 4;
   }
 
   @override
   Widget build(BuildContext context) {
     final r = R(context);
     final altura = alturaTotal(context);
-    final alturaFaixa = (altura * 0.32).clamp(34.0, 58.0);
+    final alturaFaixa = ((altura - 4) * 0.30).clamp(34.0, 50.0) + 4;
     final destaque = (iconesTelas[telaAtual] ?? (Icons.dashboard_rounded, Destaques.clima)).$2;
     final comPontos = telasRodizio.length > 1 &&
         ConfigManager().getBool('barra_info', 'mostrar_pontos', true);
@@ -117,9 +118,9 @@ class BarraInfo extends StatelessWidget {
           // os pontinhos de navegação numa pílula própria ao lado.
           Padding(
             // Folga em cima: a cápsula não fica "embutida" no cabeçalho.
-            padding: EdgeInsets.fromLTRB(r.sp(24), r.sp(8), r.sp(24), r.sp(10)),
+            padding: EdgeInsets.fromLTRB(r.sp(24), 4, r.sp(24), r.sp(8)),
             child: SizedBox(
-              height: alturaFaixa - r.sp(18),
+              height: alturaFaixa - 4 - r.sp(8), // mesma altura da cápsula de antes
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
