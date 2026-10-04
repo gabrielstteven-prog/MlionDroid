@@ -877,6 +877,20 @@ class _TelaConfigState extends State<TelaConfig>
             chave: 'manter_tela_ligada',
             valorPadrao: true,
           ),
+          _toggleConfig(
+            titulo: 'Fundo aurora',
+            subtitulo: 'Luzes coloridas que passeiam bem devagar no fundo das telas',
+            categoria: 'geral',
+            chave: 'fundo_aurora',
+            valorPadrao: true,
+          ),
+          _toggleConfig(
+            titulo: 'Pontinhos de navegação no topo',
+            subtitulo: 'Mostram em qual tela do rodízio você está',
+            categoria: 'barra_info',
+            chave: 'mostrar_pontos',
+            valorPadrao: true,
+          ),
         ]),
         const SizedBox(height: 16),
         _glassCard(children: [

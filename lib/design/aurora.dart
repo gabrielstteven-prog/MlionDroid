@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../performance_manager.dart';
 import 'tema.dart';
 
 /// Aurora: três manchas de luz grandes e suaves que passeiam devagar sobre o
-/// céu (um ciclo a cada ~70 s). As cores mudam com o período do dia — verde e
+/// céu (uma volta a cada ~4 min, atualizada 8x por segundo para não pesar). As
+/// cores mudam com o período do dia — verde e
 /// violeta de madrugada, como uma aurora boreal; laranja e magenta no fim da
 /// tarde. Com o Spotify, as cores saem da capa do disco.
 ///
@@ -41,23 +44,33 @@ class Aurora extends StatefulWidget {
   State<Aurora> createState() => _AuroraState();
 }
 
-class _AuroraState extends State<Aurora> with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
-      AnimationController(vsync: this, duration: const Duration(seconds: 70));
+class _AuroraState extends State<Aurora> {
+  // Relógio ÚNICO para a aurora inteira: se a tela for recriada (sair das
+  // Configurações, trocar de modo), as luzes continuam de onde estavam em
+  // vez de pular para a posição inicial.
+  static final Stopwatch _relogio = Stopwatch()..start();
+  static const _cicloSeg = 240.0; // uma volta completa a cada 4 minutos
+
+  final ValueNotifier<double> _fase = ValueNotifier(0);
+  Timer? _timer;
+
+  double get _agora => (_relogio.elapsedMilliseconds / 1000.0 % _cicloSeg) / _cicloSeg;
 
   @override
   void initState() {
     super.initState();
+    _fase.value = _agora;
+    // 8 quadros por segundo: o movimento é tão lento que o olho não vê
+    // diferença de 60 — e o tablet não engasga redesenhando a tela inteira.
     if (PerformanceManager.instance.animacoesDecorativasAtivas) {
-      _c.repeat();
-    } else {
-      _c.value = 0.3; // parada, mas presente
+      _timer = Timer.periodic(const Duration(milliseconds: 125), (_) => _fase.value = _agora);
     }
   }
 
   @override
   void dispose() {
-    _c.dispose();
+    _timer?.cancel();
+    _fase.dispose();
     super.dispose();
   }
 
@@ -65,7 +78,7 @@ class _AuroraState extends State<Aurora> with SingleTickerProviderStateMixin {
   Widget build(BuildContext context) {
     return RepaintBoundary(
       child: CustomPaint(
-        painter: _PintorAurora(_c, widget.cores),
+        painter: _PintorAurora(_fase, widget.cores),
         size: Size.infinite,
       ),
     );
@@ -73,7 +86,7 @@ class _AuroraState extends State<Aurora> with SingleTickerProviderStateMixin {
 }
 
 class _PintorAurora extends CustomPainter {
-  final Animation<double> anim;
+  final ValueListenable<double> anim;
   final List<Color> cores;
   _PintorAurora(this.anim, this.cores) : super(repaint: anim);
 
@@ -84,15 +97,15 @@ class _PintorAurora extends CustomPainter {
     final h = size.height;
     // Cada mancha percorre uma curva própria (Lissajous) devagar.
     final caminhos = [
-      Offset(0.25 + 0.18 * math.sin(t), 0.25 + 0.12 * math.cos(t * 2)),
-      Offset(0.75 + 0.15 * math.cos(t + 1.3), 0.35 + 0.18 * math.sin(t * 1.5 + 0.4)),
-      Offset(0.5 + 0.25 * math.sin(t * 0.7 + 2.1), 0.8 + 0.1 * math.cos(t + 0.9)),
+      Offset(0.25 + 0.12 * math.sin(t), 0.25 + 0.08 * math.cos(t)),
+      Offset(0.75 + 0.10 * math.cos(t + 1.3), 0.35 + 0.10 * math.sin(t + 0.4)),
+      Offset(0.5 + 0.15 * math.sin(t + 2.1), 0.8 + 0.06 * math.cos(t + 0.9)),
     ];
     final raios = [0.55, 0.5, 0.6];
-    final intensidade = [0.26, 0.22, 0.18];
+    final intensidade = [0.17, 0.14, 0.12]; // suave: sem "ponto de luz" forte
     for (var i = 0; i < 3; i++) {
       final centro = Offset(caminhos[i].dx * w, caminhos[i].dy * h);
-      final raio = raios[i] * math.max(w, h) * (0.9 + 0.1 * math.sin(t * 2 + i));
+      final raio = raios[i] * math.max(w, h) * (0.95 + 0.05 * math.sin(t + i));
       final cor = cores[i % cores.length];
       canvas.drawCircle(
         centro,
@@ -110,5 +123,5 @@ class _PintorAurora extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_PintorAurora old) => old.cores != cores;
+  bool shouldRepaint(_PintorAurora old) => !listEquals(old.cores, cores);
 }
