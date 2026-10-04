@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'barra_info.dart';
+import 'cache_manager.dart';
 import 'config_manager.dart';
 import 'info_hub.dart';
 import 'performance_manager.dart';
@@ -189,6 +190,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
 
   // ── Modo Noite ───────────────────────────────────────────────────────────
   void _avaliarModoNoite() {
+    _checarBomDia();
     final agora = DateTime.now();
     final noite = config.getBool('noite', 'ativo', true) &&
         horaNaJanela(agora.hour, config.getInt('noite', 'hora_inicio', 23),
@@ -277,7 +279,50 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
   }
 
   /// A câmera ainda vê alguém depois de acender: adia o próximo apagão.
-  void _presenca() => _adiarApagao();
+  void _presenca() {
+    _adiarApagao();
+    _dispararBomDia();
+  }
+
+  // ── Bom dia ao ver alguém ────────────────────────────────────────────────
+  // No horário do Bom Dia, a câmera fica de olho; na primeira vez que vê
+  // alguém (ou no primeiro toque), abre o Bom Dia e o Jarvis fala o
+  // briefing — uma vez por dia.
+  bool _aguardandoBomDia = false;
+  String _bomDiaChecadoEm = '';
+
+  String get _chaveBomDiaFalado {
+    final h = DateTime.now();
+    return 'bom_dia_falado_${h.year}_${h.month}_${h.day}';
+  }
+
+  Future<void> _checarBomDia() async {
+    if (!config.getBool('bom_dia', 'falar_ao_ver', true)) return;
+    final agora = DateTime.now();
+    final naJanela = horaNaJanela(agora.hour, config.getInt('bom_dia', 'hora_inicio', 4),
+        config.getInt('bom_dia', 'hora_fim', 10));
+    if (!naJanela) {
+      _aguardandoBomDia = false;
+      return;
+    }
+    final hoje = '${agora.year}-${agora.month}-${agora.day}';
+    if (_bomDiaChecadoEm == hoje || _modoNoite) return;
+    _bomDiaChecadoEm = hoje;
+    if (await CacheManager.instance.obterEntrada<bool>(_chaveBomDiaFalado) != null) return;
+    _aguardandoBomDia = true;
+    Sistema.observarPresenca();
+  }
+
+  void _dispararBomDia() {
+    if (!_aguardandoBomDia || _modoNoite || !mounted) return;
+    _aguardandoBomDia = false;
+    // Fora do descanso, a câmera já cumpriu o papel: desliga.
+    if (_noiteDispensadaAte == null || DateTime.now().isAfter(_noiteDispensadaAte!)) {
+      Sistema.pararDescanso();
+    }
+    TelaBomDia.falarAoAbrir = true;
+    _irParaTela('bom_dia', manual: false);
+  }
 
   /// A tela foi apagada pelo Modo Noite (opção "desligar a tela").
   bool _telaDesligada = false;
@@ -287,6 +332,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
   void _acordouPorSensor() {
     final motivo = Sistema.acordouPorSensor.value;
     if (motivo == null) return;
+    _dispararBomDia();
     if (_ausenteManual) {
       // Chegou em casa: sai do modo ausente, para de vigiar e dá as boas-vindas.
       AssistenteService.instance.ausente.value = false;
@@ -567,6 +613,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
             child: Listener(
               behavior: HitTestBehavior.translucent,
               onPointerDown: (_) {
+                _dispararBomDia();
                 _adiarApagao();
                 _entrarModoManual();
               },

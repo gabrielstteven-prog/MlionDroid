@@ -3214,9 +3214,17 @@ class _TelaConfigState extends State<TelaConfig>
           ),
           const Divider(color: Colors.white10, height: 24),
           _toggleConfig(
-            titulo: 'Ler o resumo do dia em voz alta',
-            subtitulo:
-                'Uma vez por manhã, na primeira vez que a tela Bom Dia aparece',
+            titulo: 'Jarvis dá bom dia quando te vê',
+            subtitulo: 'No horário do Bom Dia, na primeira vez que a câmera vê alguém '
+                '(ou no primeiro toque), abre esta tela e o Jarvis fala o briefing',
+            categoria: 'bom_dia',
+            chave: 'falar_ao_ver',
+            valorPadrao: true,
+          ),
+          const SizedBox(height: 8),
+          _toggleConfig(
+            titulo: 'Ler o resumo sempre que a tela aparecer',
+            subtitulo: 'Uma vez por manhã, mesmo sem ninguém na frente',
             categoria: 'bom_dia',
             chave: 'falar_resumo',
             valorPadrao: false,

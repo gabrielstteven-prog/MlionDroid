@@ -14,12 +14,15 @@ import 'info_hub.dart';
 import 'performance_manager.dart';
 import 'responsive.dart';
 import 'services/fotos_service.dart';
+import 'services/assistente_service.dart';
 import 'services/jarvis_service.dart';
 import 'services/news_service.dart';
 import 'services/resumo_service.dart';
 import 'services/voz_service.dart';
 import 'services/weather_service.dart';
 import 'util.dart';
+import 'widgets/camada_assistente.dart' show OrbeJarvis;
+import 'design/icones.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  TelaBomDia — saudação, clima do dia, foto do dia, notícia e frase.
@@ -28,6 +31,10 @@ import 'util.dart';
 class TelaBomDia extends StatefulWidget {
   final VoidCallback aoTerminar;
   const TelaBomDia({super.key, required this.aoTerminar});
+
+  /// Pedido de briefing falado ao abrir: o painel viu alguém pela primeira
+  /// vez na manhã (câmera, toque ou "Hey Jarvis") e abriu esta tela.
+  static bool falarAoAbrir = false;
 
   @override
   State<TelaBomDia> createState() => _TelaBomDiaState();
@@ -187,26 +194,59 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
     if (!mounted) return;
     setState(() => _carregando = false);
     _iniciarSaida();
+    // O texto do Jarvis chega depois (a IA leva alguns segundos); a fala
+    // espera por ele.
+    await _carregarBriefing();
+    if (!mounted) return;
+    setState(() {});
     _falarResumoSeConfigurado();
   }
 
   List<ItemResumo> _resumo = [];
 
-  /// Lê o resumo em voz alta uma vez por manhã (opcional, nas Configurações).
+  /// Briefing escrito pelo Jarvis (IA), guardado por 3 h para não gastar a
+  /// cota a cada passagem da tela. null = sem IA: mostra a lista do resumo.
+  String? _briefing;
+  bool _falando = false;
+
+  Future<void> _carregarBriefing() async {
+    final hoje = DateTime.now();
+    final chave = 'briefing_${hoje.year}_${hoje.month}_${hoje.day}_${hoje.hour ~/ 3}';
+    final salvo = await CacheManager.instance.obterEntrada<String>(chave);
+    if (salvo != null) {
+      _briefing = salvo.dados;
+      return;
+    }
+    final texto = await JarvisService.instance
+        .briefing(_saudacao)
+        .timeout(const Duration(seconds: 30), onTimeout: () => null);
+    if (texto != null && texto.isNotEmpty) {
+      _briefing = texto;
+      await CacheManager.instance.salvar(chave, texto);
+    }
+  }
+
+  /// Fala o briefing uma vez por manhã: quando o painel viu alguém (câmera,
+  /// toque, "Hey Jarvis") ou, com a opção ligada, ao abrir a tela.
   Future<void> _falarResumoSeConfigurado() async {
-    if (!_cfg.getBool('bom_dia', 'falar_resumo', false) || _resumo.isEmpty) return;
+    final pedido = TelaBomDia.falarAoAbrir;
+    TelaBomDia.falarAoAbrir = false;
+    if (!pedido && !_cfg.getBool('bom_dia', 'falar_resumo', false)) return;
     final hoje = DateTime.now();
     final chave = 'bom_dia_falado_${hoje.year}_${hoje.month}_${hoje.day}';
     if (await CacheManager.instance.obterEntrada<bool>(chave) != null) return;
     await CacheManager.instance.salvar(chave, true);
-    // Com IA configurada, o Jarvis escreve um briefing natural; sem IA (ou
-    // se ela falhar), lê o resumo pronto.
     final nome = _nomeUsuario;
-    final texto = await JarvisService.instance.briefing(_saudacao) ??
+    final texto = _briefing ??
         ResumoService.instance
             .paraFalar(nome.isEmpty ? _saudacao : '$_saudacao, $nome', _resumo);
     if (!mounted) return;
+    _saidaTimer?.cancel(); // não sai da tela no meio da fala
+    setState(() => _falando = true);
     await VozService.instance.falar(texto.replaceAll('°', ' graus'));
+    if (!mounted) return;
+    setState(() => _falando = false);
+    _iniciarSaida();
   }
 
   Future<void> _buscarNoticia() async {
@@ -326,55 +366,63 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
       const Carregando(cor: Destaques.bomDia);
 
   // ── Layout ────────────────────────────────────────────────────────────────
-  //  ┌─────────────────────────────────────┬──────────────────┐
-  //  │ Bom dia, Gabriel                     │                  │
-  //  │ sábado, 3 de outubro · 06:42         │   foto do dia    │
-  //  │ ☀ 22°   hoje 16° a 28°               │                  │
-  //  ├─────────────────────────────────────┴──────────────────┤
-  //  │ Seu dia (frases)                     │ notícia          │
-  //  │ frase do dia                                            │
-  //  └─────────────────────────────────────────────────────────┘
+  //  ┌───────────────────────────────────┬────────────────────┐
+  //  │ Bom dia, Gabriel                   │                    │
+  //  │ domingo, 4 de outubro · 08:41      │    foto do dia     │
+  //  │ (ícone) 20°  hoje 18° a 27°        │                    │
+  //  │                                    ├────────────────────┤
+  //  │ ◉ JARVIS                           │ notícia (compacta) │
+  //  │ "Bom dia, Gabriel. Hoje..."        │                    │
+  //  └───────────────────────────────────┴────────────────────┘
+  //  frase do dia
   Widget _buildConteudo(R r, _ClimaTheme theme, BoxConstraints constraints) {
     final t = Tipo(r);
     final temFoto = _mostrarFoto && _fotoDoDia != null;
+    final temLateral = temFoto || _mostrarNoticia;
     return Padding(
-      padding: EdgeInsets.fromLTRB(r.sp(40), r.sp(28), r.sp(40), r.sp(24)),
+      padding: EdgeInsets.fromLTRB(r.sp(48), r.sp(36), r.sp(40), r.sp(24)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(
-            flex: 11,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(flex: 3, child: _buildAbertura(r, theme)),
-                if (temFoto) ...[
-                  SizedBox(width: r.sp(32)),
-                  Expanded(flex: 2, child: _buildFotoDoDiaCard(r, theme)),
-                ],
-              ],
-            ),
-          ),
-          SizedBox(height: r.sp(24)),
-          Expanded(
-            flex: 9,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(flex: 3, child: _buildSeuDia(r)),
-                if (_mostrarNoticia) ...[
-                  SizedBox(width: r.sp(32)),
-                  Expanded(flex: 2, child: _buildNoticiaCard(r, theme)),
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildAbertura(r, theme),
+                      SizedBox(height: r.sp(36)),
+                      Expanded(child: _buildBriefing(r, theme)),
+                    ],
+                  ),
+                ),
+                if (temLateral) ...[
+                  SizedBox(width: r.sp(40)),
+                  Expanded(
+                    flex: 2,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (temFoto) Expanded(flex: 3, child: _buildFotoDoDiaCard(r, theme)),
+                        if (temFoto && _mostrarNoticia) SizedBox(height: r.sp(20)),
+                        if (_mostrarNoticia)
+                          SizedBox(height: r.sp(150), child: _buildNoticiaCard(r, theme)),
+                      ],
+                    ),
+                  ),
                 ],
               ],
             ),
           ),
           if (_mostrarFrase) ...[
-            SizedBox(height: r.sp(14)),
+            SizedBox(height: r.sp(18)),
             Text(_frase,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: t.apoio().copyWith(fontStyle: FontStyle.italic)),
+                style: t.apoio(cor: Cores.textoApagado).copyWith(fontStyle: FontStyle.italic)),
           ],
         ],
       ),
@@ -385,11 +433,11 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
   Widget _buildAbertura(R r, _ClimaTheme theme) {
     final t = Tipo(r);
     final nome = _nomeUsuario;
-    final corNome = _corDestaqueHex.isEmpty ? Destaques.bomDia : _resolverCorDestaque(theme);
-    final tamanho = r.fs(_tamanhoNome.clamp(28, 72) * 1.5);
+    final corNome = _corDestaqueHex.isEmpty ? theme.corDestaque : _resolverCorDestaque(theme);
+    final tamanho = r.fs(_tamanhoNome.clamp(28, 72) * 1.7);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
         FittedBox(
           fit: BoxFit.scaleDown,
@@ -398,7 +446,7 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
             text: TextSpan(children: [
               TextSpan(
                   text: nome.isEmpty ? _saudacao : '$_saudacao, ',
-                  style: _fonteEstilo(fontSize: tamanho, fontWeight: FontWeight.w400)),
+                  style: _fonteEstilo(fontSize: tamanho, fontWeight: FontWeight.w300)),
               if (nome.isNotEmpty)
                 TextSpan(
                     text: nome,
@@ -407,33 +455,34 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
             ]),
           ),
         ),
-        SizedBox(height: r.sp(6)),
+        SizedBox(height: r.sp(4)),
         ValueListenableBuilder<DateTime>(
           valueListenable: InfoHub.instance.relogio,
           builder: (context, agora, _) => Text(
-            '${diaSemanaLongo(agora)}, ${agora.day} de ${mesesLongos[agora.month - 1]}, ${horaMinuto(agora)}',
-            style: t.subtitulo(cor: Cores.textoSecundario).copyWith(fontWeight: FontWeight.w400),
+            '${diaSemanaLongo(agora)}, ${agora.day} de ${mesesLongos[agora.month - 1]}  ·  ${horaMinuto(agora)}',
+            style: t.corpo(cor: Cores.textoSecundario),
           ),
         ),
-        SizedBox(height: r.sp(20)),
+        SizedBox(height: r.sp(26)),
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text(theme.emoji, style: TextStyle(fontSize: r.fs(64))),
-            SizedBox(width: r.sp(16)),
+            IconeClima(codigo: _weatherCode, ehDia: _ehDia, tamanho: r.icon(96)),
+            SizedBox(width: r.sp(14)),
             Text('$_tempAtual°',
                 style: t.heroi().copyWith(
-                    fontSize: r.fs((_tamanhoTemp / 72 * 104).clamp(72, 140)))),
-            SizedBox(width: r.sp(20)),
+                    fontSize: r.fs((_tamanhoTemp / 72 * 104).clamp(72, 140)),
+                    fontWeight: FontWeight.w300)),
+            SizedBox(width: r.sp(28)),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Hoje entre $_tempMin° e $_tempMax°', style: t.corpo()),
+                Text('Hoje entre $_tempMin° e $_tempMax°', style: t.subtitulo()),
                 if (_mostrarSensacao)
-                  Text('Sensação de $_sensacao°', style: t.apoio()),
+                  Text('Sensação de $_sensacao°', style: t.corpo(cor: Cores.textoSecundario)),
                 if (_mostrarChuva && _probChuva >= 30)
-                  Text('$_probChuva% de chance de chuva', style: t.apoio(cor: Cores.chuva)),
+                  Text('$_probChuva% de chance de chuva', style: t.corpo(cor: Cores.chuva)),
               ],
             ),
           ],
@@ -442,38 +491,69 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
     );
   }
 
-  /// "Seu dia": o resumo montado pelo ResumoService.
-  Widget _buildSeuDia(R r) {
+  /// O briefing do Jarvis: o texto escrito pela IA (ou, sem IA, a lista do
+  /// resumo). O orbe pequeno anima enquanto ele fala.
+  Widget _buildBriefing(R r, _ClimaTheme theme) {
     final t = Tipo(r);
-    return Superficie(
-      padding: EdgeInsets.all(r.sp(22)),
+    final nomeAssistente = JarvisService.instance.nomeAssistente.toUpperCase();
+    return Container(
+      padding: EdgeInsets.fromLTRB(r.sp(26), r.sp(22), r.sp(26), r.sp(22)),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(r.sp(28)),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: 0.10),
+            Colors.white.withValues(alpha: 0.03),
+          ],
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Seu dia', style: t.subtitulo()),
-          SizedBox(height: r.sp(10)),
+          Row(children: [
+            OrbeJarvis(
+              estado: _falando ? EstadoAssistente.respondendo : EstadoAssistente.parado,
+              tamanho: r.sp(46),
+            ),
+            SizedBox(width: r.sp(14)),
+            Text(nomeAssistente,
+                style: t
+                    .legenda(cor: const Color(0xFF7FE3FF))
+                    .copyWith(letterSpacing: 5, fontWeight: FontWeight.w800)),
+            SizedBox(width: r.sp(12)),
+            Text(_falando ? 'falando' : 'seu dia', style: t.legenda()),
+          ]),
+          SizedBox(height: r.sp(16)),
           Expanded(
-            child: _resumo.isEmpty
-                ? Text('Dia livre: nenhum compromisso, jogo ou lembrete encontrado.',
-                    style: t.apoio())
-                : ListView(
-                    padding: EdgeInsets.zero,
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: [
-                      for (final i in _resumo)
-                        Padding(
-                          padding: EdgeInsets.only(bottom: r.sp(10)),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(i.icone, color: i.cor, size: r.icon(26)),
-                              SizedBox(width: r.sp(14)),
-                              Expanded(child: Text(i.texto, style: t.corpo())),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
+            child: _briefing != null
+                ? Text(
+                    _briefing!,
+                    style: t.corpo().copyWith(height: 1.45),
+                    overflow: TextOverflow.fade,
+                  )
+                : _resumo.isEmpty
+                    ? Text('Dia livre: nenhum compromisso, jogo ou lembrete.',
+                        style: t.corpo(cor: Cores.textoSecundario))
+                    : ListView(
+                        padding: EdgeInsets.zero,
+                        physics: const NeverScrollableScrollPhysics(),
+                        children: [
+                          for (final i in _resumo)
+                            Padding(
+                              padding: EdgeInsets.only(bottom: r.sp(14)),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(i.icone, color: i.cor, size: r.icon(28)),
+                                  SizedBox(width: r.sp(16)),
+                                  Expanded(child: Text(i.texto, style: t.corpo())),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
           ),
         ],
       ),
@@ -497,15 +577,19 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
             right: 0,
             bottom: 0,
             child: Container(
-              padding: EdgeInsets.fromLTRB(r.sp(18), r.sp(28), r.sp(18), r.sp(14)),
+              padding: EdgeInsets.fromLTRB(r.sp(20), r.sp(40), r.sp(20), r.sp(16)),
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Color(0xAA000000)],
+                  colors: [Colors.transparent, Color(0xB3000000)],
                 ),
               ),
-              child: Text('Recordação do dia', style: t.apoio(cor: Cores.texto)),
+              child: Row(children: [
+                Icon(Icons.auto_awesome_rounded, color: theme.corDestaque, size: r.icon(22)),
+                SizedBox(width: r.sp(10)),
+                Text('Recordação do dia', style: t.corpo(peso: FontWeight.w600)),
+              ]),
             ),
           ),
         ],
@@ -513,49 +597,51 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
     );
   }
 
+  /// Notícia do dia, compacta: miniatura + manchete (toque para ler).
   Widget _buildNoticiaCard(R r, _ClimaTheme theme) {
     final t = Tipo(r);
     final n = _noticia;
     return GestureDetector(
       onTap: _abrirNoticia,
-      child: Superficie(
-        padding: EdgeInsets.zero,
-        child: Column(
+      child: Container(
+        padding: EdgeInsets.all(r.sp(14)),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(r.sp(24)),
+        ),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (n != null && n.imagem.isNotEmpty)
-              Expanded(
-                flex: 5,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(r.sp(24))),
+            if (n != null && n.imagem.isNotEmpty) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(r.sp(16)),
+                child: AspectRatio(
+                  aspectRatio: 1.2,
                   child: CachedNetworkImage(
                     imageUrl: n.imagem,
                     fit: BoxFit.cover,
-                    memCacheWidth: 700,
+                    memCacheWidth: 400,
                     errorWidget: (_, __, ___) => const SizedBox.shrink(),
                   ),
                 ),
               ),
+              SizedBox(width: r.sp(16)),
+            ],
             Expanded(
-              flex: 6,
-              child: Padding(
-                padding: EdgeInsets.all(r.sp(18)),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Notícia do dia', style: t.legenda()),
-                    SizedBox(height: r.sp(6)),
-                    Expanded(
-                      child: Text(
-                        n?.titulo ?? 'Sem conexão com as notícias agora.',
-                        style: t.corpo(peso: FontWeight.w700),
-                        maxLines: 4,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (n != null) Text('Toque para ler', style: t.legenda(cor: Destaques.bomDia)),
-                  ],
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('NOTÍCIA DO DIA',
+                      style: t.legenda().copyWith(letterSpacing: 2, fontWeight: FontWeight.w700)),
+                  SizedBox(height: r.sp(6)),
+                  Text(
+                    n?.titulo ?? 'Sem conexão com as notícias agora.',
+                    style: t.corpo(peso: FontWeight.w700),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
           ],
