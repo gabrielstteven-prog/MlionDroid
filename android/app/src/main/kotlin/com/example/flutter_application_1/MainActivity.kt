@@ -137,12 +137,16 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "falar" -> {
+                    // Responde só quando a fala TERMINA: a conversa contínua do
+                    // Jarvis volta a ouvir depois, sem escutar a própria voz.
                     val texto = call.argument<String>("texto") ?: ""
+                    concluirFala()
+                    falaResult = result
                     falar(texto)
-                    result.success(null)
                 }
                 "pararFala" -> {
                     tts?.stop()
+                    concluirFala()
                     pararAudio()
                     result.success(null)
                 }
@@ -230,7 +234,9 @@ class MainActivity : FlutterActivity() {
             // Os modelos são carregados uma vez; só a escuta liga/desliga.
             if (ouvido == null || limiar != limiarOuvido) {
                 ouvido?.liberar()
-                ouvido = OuvidoJarvis(applicationContext, limiar) {
+                // Sensibilidade alta também aumenta o ganho (ouvir do meio da sala).
+                val ganho = (1f + (sensibilidade - 0.4f) * 2.5f).coerceIn(1f, 2.2f)
+                ouvido = OuvidoJarvis(applicationContext, limiar, ganho) {
                     runOnUiThread { aoOuvirPalavra() }
                 }
                 limiarOuvido = limiar
@@ -337,14 +343,30 @@ class MainActivity : FlutterActivity() {
         putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1f)
     }
 
+    private var falaResult: MethodChannel.Result? = null
+
+    private fun concluirFala() {
+        falaResult?.success(null)
+        falaResult = null
+    }
+
+    private val ouvinteFala = object : android.speech.tts.UtteranceProgressListener() {
+        override fun onStart(utteranceId: String?) {}
+        override fun onDone(utteranceId: String?) { runOnUiThread { concluirFala() } }
+        @Deprecated("Mantido por compatibilidade")
+        override fun onError(utteranceId: String?) { runOnUiThread { concluirFala() } }
+        override fun onStop(utteranceId: String?, interrupted: Boolean) { runOnUiThread { concluirFala() } }
+    }
+
     private fun falar(texto: String) {
-        if (texto.isBlank()) return
+        if (texto.isBlank()) { concluirFala(); return }
         if (tts == null) {
             falaPendente = texto
             tts = TextToSpeech(this) { status ->
                 ttsPronto = status == TextToSpeech.SUCCESS
                 if (ttsPronto) {
                     tts?.language = Locale("pt", "BR")
+                    tts?.setOnUtteranceProgressListener(ouvinteFala)
                     // Mesmo canal (e volume) das músicas: o padrão do TTS em alguns
                     // tablets é um canal com volume baixo.
                     tts?.setAudioAttributes(
@@ -355,11 +377,14 @@ class MainActivity : FlutterActivity() {
                     )
                     falaPendente?.let { tts?.speak(it, TextToSpeech.QUEUE_FLUSH, volumeMaximo(), "mlion") }
                     falaPendente = null
+                } else {
+                    concluirFala() // sem motor de voz: não deixa ninguém esperando
                 }
             }
             return
         }
         if (ttsPronto) tts?.speak(texto, TextToSpeech.QUEUE_FLUSH, volumeMaximo(), "mlion")
+        else concluirFala()
     }
 
     // ── Áudio pronto (voz da ElevenLabs em MP3) ────────────────────────────

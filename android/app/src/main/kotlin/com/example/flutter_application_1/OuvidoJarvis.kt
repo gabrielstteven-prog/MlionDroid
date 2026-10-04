@@ -26,6 +26,8 @@ import java.nio.ByteOrder
 class OuvidoJarvis(
     ctx: Context,
     private val limiar: Float,
+    /** Ganho de software sobre o áudio (1 = original): ajuda a ouvir de longe. */
+    private val ganho: Float,
     private val aoOuvir: () -> Unit,
 ) {
     companion object {
@@ -81,6 +83,15 @@ class OuvidoJarvis(
                 rec.release()
                 return@Thread
             }
+            // Ganho automático e supressão de ruído do próprio Android (quando o
+            // tablet tem): a voz do meio da sala chega mais forte e limpa.
+            val agc = if (android.media.audiofx.AutomaticGainControl.isAvailable())
+                android.media.audiofx.AutomaticGainControl.create(rec.audioSessionId)?.apply { enabled = true }
+            else null
+            val ns = if (android.media.audiofx.NoiseSuppressor.isAvailable())
+                android.media.audiofx.NoiseSuppressor.create(rec.audioSessionId)?.apply { enabled = true }
+            else null
+            Log.i(TAG, "ganho automático: ${agc != null}, supressor de ruído: ${ns != null}, ganho extra: $ganho")
             val amostras = ShortArray(BLOCO)
             rec.startRecording()
             Log.i(TAG, "ouvindo \"Hey Jarvis\" (limiar $limiar)")
@@ -98,6 +109,8 @@ class OuvidoJarvis(
                 Log.w(TAG, "escuta parou: $e")
             } finally {
                 try { rec.stop() } catch (_: Exception) {}
+                agc?.release()
+                ns?.release()
                 rec.release()
             }
         }, "ouvido-jarvis").also { it.start() }
@@ -119,7 +132,9 @@ class OuvidoJarvis(
     private fun processar(bloco: ShortArray) {
         // Janela de áudio: as últimas 480 amostras + o bloco novo.
         System.arraycopy(bruto, BLOCO, bruto, 0, SOBRA)
-        for (i in 0 until BLOCO) bruto[SOBRA + i] = bloco[i].toFloat()
+        for (i in 0 until BLOCO) {
+            bruto[SOBRA + i] = (bloco[i] * ganho).coerceIn(-32768f, 32767f)
+        }
 
         // 1) Espectrograma mel
         val entradaMel = ByteBuffer.allocateDirect(bruto.size * 4).order(ByteOrder.nativeOrder())

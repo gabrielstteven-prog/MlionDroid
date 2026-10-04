@@ -7,6 +7,25 @@ import 'package:mlion_droid/times.dart';
 
 void main() {
   group('Teste real no tablet (03/10)', () {
+    test('despedida encerra a conversa (mas "estou saindo" é modo ausente)', () {
+      expect(interpretar('tchau, Jarvis').tipo, TipoComando.encerrar);
+      expect(interpretar('valeu, pode ir').tipo, TipoComando.encerrar);
+      expect(interpretar('obrigado, era só isso').tipo, TipoComando.encerrar);
+      expect(interpretar('estou saindo').tipo, TipoComando.sair);
+    });
+    test('IA: cartão de receita e tela com fala', () {
+      final c = acaoDaIa(
+          '{"acao":"card","titulo":"Bolo","secoes":[{"titulo":"Ingredientes","itens":["3 ovos","farinha"]},{"titulo":"Modo de preparo","itens":["Misture","Asse"]}],"fala":"Aqui está!","emocao":"feliz"}',
+          'x')!;
+      expect(c.tipo, TipoComando.card);
+      expect(c.card!.titulo, 'Bolo');
+      expect(c.card!.secoes.length, 2);
+      expect(c.card!.secoes.first.$2, ['3 ovos', 'farinha']);
+      expect(c.fala, 'Aqui está!');
+      final t = acaoDaIa('{"acao":"tela","tela":"clima","fala":"Vai chover às 17h."}', 'x')!;
+      expect(t.tela, 'clima');
+      expect(t.fala, 'Vai chover às 17h.');
+    });
     test('visão: o que tenho na mão', () {
       expect(interpretar('Jarvis, olha o que eu tenho na mão').tipo, TipoComando.olhar);
       expect(interpretar('o que é isso?').tipo, TipoComando.olhar);

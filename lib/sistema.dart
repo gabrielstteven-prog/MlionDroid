@@ -26,10 +26,13 @@ class Sistema {
     }
   }
 
-  /// Fala o texto em voz alta (TTS nativo do Android, em português).
+  /// Fala o texto em voz alta (TTS nativo do Android, em português) e só
+  /// retorna quando a fala termina (com limite de segurança).
   static Future<void> falar(String texto) async {
     try {
-      await _canal.invokeMethod('falar', {'texto': texto});
+      await _canal
+          .invokeMethod('falar', {'texto': texto})
+          .timeout(Duration(seconds: 8 + texto.length ~/ 10), onTimeout: () => null);
     } catch (e) {
       debugPrint('Sistema.falar: $e');
     }

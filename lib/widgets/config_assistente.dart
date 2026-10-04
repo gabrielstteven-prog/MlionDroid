@@ -86,6 +86,31 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
           Text(JarvisService.instance.personalidadeAtual.descricao,
               style: _txt(13, cor: Colors.white54)),
           const SizedBox(height: 16),
+          Text('Visual', style: _txt(15, peso: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Wrap(spacing: 10, children: [
+            for (final (id, rotulo) in const [
+              ('rosto', 'Rosto com emoções'),
+              ('orbe', 'Orbe (HUD)'),
+            ])
+              ChoiceChip(
+                label: Text(rotulo),
+                selected: _cfg.getString('assistente', 'visual', 'rosto') == id,
+                onSelected: (_) => setState(() => _cfg.set('assistente', 'visual', id)),
+              ),
+          ]),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+              child: Text('Conversa contínua (ele volta a ouvir depois de responder)',
+                  style: _txt(15, peso: FontWeight.w600)),
+            ),
+            Switch(
+              value: _cfg.getBool('assistente', 'conversa_continua', true),
+              onChanged: (v) => setState(() => _cfg.set('assistente', 'conversa_continua', v)),
+            ),
+          ]),
+          const SizedBox(height: 16),
           _campo('gemini_chave', 'Chave do Gemini',
               'aistudio.google.com → Get API key', Icons.key_rounded,
               secreto: true),

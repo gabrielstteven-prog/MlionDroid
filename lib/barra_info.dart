@@ -55,14 +55,14 @@ class BarraInfo extends StatelessWidget {
 
   static double alturaTotal(BuildContext context) {
     final sh = MediaQuery.of(context).size.height;
-    return (sh * 0.15).clamp(104.0, 164.0);
+    return (sh * 0.16).clamp(110.0, 180.0);
   }
 
   @override
   Widget build(BuildContext context) {
     final r = R(context);
     final altura = alturaTotal(context);
-    final alturaFaixa = (altura * 0.30).clamp(34.0, 50.0);
+    final alturaFaixa = (altura * 0.32).clamp(34.0, 58.0);
     final destaque = (iconesTelas[telaAtual] ?? (Icons.dashboard_rounded, Destaques.clima)).$2;
     final comPontos = telasRodizio.length > 1 &&
         ConfigManager().getBool('barra_info', 'mostrar_pontos', true);
@@ -116,9 +116,10 @@ class BarraInfo extends StatelessWidget {
           // Faixa de frases/notícias em cápsula arredondada, "flutuando", com
           // os pontinhos de navegação numa pílula própria ao lado.
           Padding(
-            padding: EdgeInsets.fromLTRB(r.sp(24), 0, r.sp(24), r.sp(8)),
+            // Folga em cima: a cápsula não fica "embutida" no cabeçalho.
+            padding: EdgeInsets.fromLTRB(r.sp(24), r.sp(8), r.sp(24), r.sp(10)),
             child: SizedBox(
-              height: alturaFaixa - r.sp(8),
+              height: alturaFaixa - r.sp(18),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [

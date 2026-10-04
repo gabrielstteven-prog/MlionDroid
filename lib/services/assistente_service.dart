@@ -14,6 +14,7 @@ import 'ia_service.dart';
 import 'jarvis_service.dart';
 import 'resumo_service.dart';
 import 'voz_service.dart';
+import '../widgets/rosto_jarvis.dart' show Emocao, emocaoDeTexto;
 import 'weather_service.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -41,7 +42,16 @@ enum TipoComando {
   olhar, // "olha o que eu tenho na mão": foto + IA
   sair, // "estou saindo": modo ausente
   chegar, // "cheguei"
+  card, // receita, lista, passo a passo: cartão na tela (vem da IA)
+  encerrar, // "tchau", "pode ir": fecha a conversa contínua
   desconhecido,
+}
+
+/// Cartão que o Jarvis mostra na tela (receita, lista, passo a passo).
+class CardJarvis {
+  final String titulo;
+  final List<(String, List<String>)> secoes;
+  const CardJarvis(this.titulo, this.secoes);
 }
 
 class Comando {
@@ -50,9 +60,16 @@ class Comando {
   final List<String> itens;
   final String? tela;
   final String? personalidade; // id: mordomo, sincerao, agressivo, comediante
+  final String? fala; // o que falar junto da ação (vem da IA)
+  final CardJarvis? card;
   final String textoOriginal;
   const Comando(this.tipo, this.textoOriginal,
-      {this.duracao, this.itens = const [], this.tela, this.personalidade});
+      {this.duracao,
+      this.itens = const [],
+      this.tela,
+      this.personalidade,
+      this.fala,
+      this.card});
 }
 
 const _numeros = {
@@ -116,6 +133,16 @@ Comando interpretar(String falado) {
     if (itens.isNotEmpty) {
       return Comando(TipoComando.adicionarCompra, falado, itens: itens);
     }
+  }
+
+  // Encerrar a conversa: frase curta de despedida ("tchau", "pode ir",
+  // "valeu, Jarvis", "obrigado, era só isso").
+  if (f.split(' ').length <= 6 &&
+      RegExp(r'\b(tchau|valeu|obrigad[oa]|pode ir|pode sair|encerrar|encerra|so isso|'
+              r'era so isso|ate mais|ate logo|fechar|fecha|chega|sair)\b')
+          .hasMatch(f) &&
+      !RegExp(r'\b(estou|to|vou)\s+(saindo|sair)\b').hasMatch(f)) {
+    return Comando(TipoComando.encerrar, falado);
   }
 
   // Visão: "olha o que eu tenho na mão", "o que é isso?", "veja isso aqui"
@@ -299,14 +326,56 @@ class AssistenteService extends ChangeNotifier {
 
   bool get algumTocando => temporizadores.any((t) => t.tocando);
 
-  /// Toque no microfone.
-  Future<void> ouvir() async {
+  /// Conversa contínua: depois de responder, o Jarvis volta a ouvir sozinho
+  /// (como uma live) até a pessoa se despedir ou ficar em silêncio.
+  bool _emConversa = false;
+  bool get emConversa => _emConversa;
+  bool get _conversaContinua => _cfg.getBool('assistente', 'conversa_continua', true);
+
+  // ── Emoção do rosto ─────────────────────────────────────────────────────
+  String _emocaoTexto = ''; // da última resposta da IA
+
+  Emocao get emocao {
+    if (estado == EstadoAssistente.pensando) return Emocao.duvida;
+    if (estado == EstadoAssistente.respondendo && _emocaoTexto.isNotEmpty) {
+      return emocaoDeTexto(_emocaoTexto);
+    }
+    return switch (JarvisService.instance.personalidadeAtual.id) {
+      'agressivo' => Emocao.bravo,
+      'sincerao' => Emocao.neutro,
+      _ => Emocao.feliz,
+    };
+  }
+
+  /// Cartão na tela (receita, lista...) enquanto a conversa estiver aberta.
+  CardJarvis? ultimoCard;
+
+  /// O Jarvis abriu uma tela (clima, notícias...): o orbe vira uma barra
+  /// compacta embaixo para a tela aparecer.
+  bool telaAberta = false;
+
+  void _mostrarTela(String tela) {
+    telaAberta = true;
+    pedidoDeTela.value = tela;
+  }
+
+  /// Toque no microfone, "Hey Jarvis" ou a volta automática da conversa
+  /// ([continuacao]).
+  Future<void> ouvir({bool continuacao = false}) async {
     if (estado == EstadoAssistente.ouvindo) return;
+    if (!continuacao) {
+      _emConversa = _conversaContinua;
+      JarvisService.instance.limparConversa();
+      ultimoCard = null;
+      telaAberta = false;
+    }
     await Sistema.pararFala();
     estado = EstadoAssistente.ouvindo;
     ultimaFala = '';
-    ultimaResposta = '';
-    ultimaFoto = null;
+    if (!continuacao) {
+      ultimaResposta = '';
+      ultimaFoto = null;
+    }
     notifyListeners();
     // Mostra no orbe o que já foi entendido, palavra por palavra.
     void parcial() {
@@ -322,7 +391,13 @@ class AssistenteService extends ChangeNotifier {
     } finally {
       Sistema.falaParcial.removeListener(parcial);
     }
+    if (estado != EstadoAssistente.ouvindo) return; // fechado no meio
     if (falado.trim().isEmpty) {
+      if (continuacao) {
+        // Silêncio no meio da conversa: encerra sem alarde.
+        _encerrarConversa();
+        return;
+      }
       ultimaFala = '';
       ultimaResposta = 'Não ouvi nada. Toque no microfone e fale de novo.';
       estado = EstadoAssistente.respondendo;
@@ -342,36 +417,63 @@ class AssistenteService extends ChangeNotifier {
     ultimaFala = falado;
     estado = EstadoAssistente.pensando;
     notifyListeners();
+    final comando = interpretar(falado);
+    _emocaoTexto = '';
+    JarvisService.instance.ultimaEmocao = '';
+    if (comando.tipo == TipoComando.encerrar || comando.tipo == TipoComando.sair) {
+      _emConversa = false;
+    }
     String resposta;
     try {
-      resposta = await _executar(interpretar(falado));
+      resposta = await _executar(comando);
     } catch (e) {
       debugPrint('Assistente: $e');
       resposta = 'Não consegui fazer isso agora. Verifique a internet e tente de novo.';
     }
+    _emocaoTexto = JarvisService.instance.ultimaEmocao; // vazio se não usou IA
+    if (estado == EstadoAssistente.parado) return; // fechado no meio
     ultimaResposta = resposta;
     estado = EstadoAssistente.respondendo;
     notifyListeners();
-    final inicio = DateTime.now();
+    // A fala só retorna quando termina (voz premium e do Android).
     await VozService.instance.falar(resposta);
-    // A voz premium só retorna quando termina; a do Android retorna na hora,
-    // então estima o tempo de fala (~14 letras por segundo) para o orbe.
-    final falando = DateTime.now().difference(inicio);
-    final estimado = Duration(milliseconds: 1500 + resposta.length * 70);
-    final resta = falando > const Duration(seconds: 1) ? const Duration(seconds: 2) : estimado;
-    Timer(resta, () {
+    if (estado != EstadoAssistente.respondendo) return;
+    if (_emConversa) {
+      await Future.delayed(const Duration(milliseconds: 350));
+      if (estado == EstadoAssistente.respondendo && _emConversa) {
+        ouvir(continuacao: true);
+        return;
+      }
+    }
+    Timer(Duration(seconds: ultimoCard != null ? 20 : 2), () {
       if (estado == EstadoAssistente.respondendo) {
         estado = EstadoAssistente.parado;
+        ultimoCard = null;
         notifyListeners();
       }
     });
   }
 
-  void fechar() {
+  void _encerrarConversa() {
+    _emConversa = false;
     estado = EstadoAssistente.parado;
-    VozService.instance.parar();
+    ultimoCard = null;
+    telaAberta = false;
+    JarvisService.instance.limparConversa();
     notifyListeners();
   }
+
+  void fechar() {
+    VozService.instance.parar();
+    _encerrarConversa();
+  }
+
+  String get _despedida => switch (JarvisService.instance.personalidadeAtual.id) {
+        'agressivo' => 'Finalmente. Até mais.',
+        'sincerao' => 'Falou. Qualquer coisa, me chama.',
+        'comediante' => 'Saindo de fininho... até a próxima!',
+        _ => 'Às ordens. Até mais.',
+      };
 
   Future<String> _executar(Comando c) async {
     switch (c.tipo) {
@@ -395,8 +497,10 @@ class AssistenteService extends ChangeNotifier {
         final a = DateTime.now();
         return 'Hoje é ${diaSemanaLongo(a).toLowerCase()}, ${a.day} de ${mesesLongos[a.month - 1]}.';
       case TipoComando.clima:
+        _mostrarTela('clima'); // mostra a tela enquanto fala
         return _respostaClima(c.textoOriginal);
       case TipoComando.jogo:
+        _mostrarTela('proxima_partida');
         return _respostaJogo();
       case TipoComando.resumo:
         final briefing = await JarvisService.instance.briefing(saudacaoDaHora());
@@ -435,8 +539,14 @@ class AssistenteService extends ChangeNotifier {
           _ => 'De volta ao modo mordomo, às suas ordens.',
         };
       case TipoComando.abrirTela:
-        pedidoDeTela.value = c.tela;
-        return 'Abrindo.';
+        _mostrarTela(c.tela!);
+        return c.fala?.isNotEmpty == true ? c.fala! : 'Abrindo.';
+      case TipoComando.card:
+        ultimoCard = c.card;
+        notifyListeners();
+        return c.fala?.isNotEmpty == true ? c.fala! : 'Pronto, está na tela.';
+      case TipoComando.encerrar:
+        return _despedida;
       case TipoComando.desconhecido:
         // O cérebro local não entendeu: pergunta para a IA (Gemini / Groq).
         final ia = await JarvisService.instance.responder(c.textoOriginal);
@@ -549,14 +659,17 @@ class AssistenteService extends ChangeNotifier {
 /// ({"acao":"temporizador","segundos":60}...). null = é só uma resposta
 /// falada. Função pura — testada.
 Comando? acaoDaIa(String resposta, String falado) {
-  final m = RegExp(r'\{[^{}]*"acao"[^{}]*\}').firstMatch(resposta);
-  if (m == null) return null;
+  // Do primeiro "{" ao último "}": o cartão tem objetos dentro de objetos.
+  final ini = resposta.indexOf('{');
+  final fim = resposta.lastIndexOf('}');
+  if (ini < 0 || fim <= ini || !resposta.contains('"acao"')) return null;
   final Map<String, dynamic> j;
   try {
-    j = jsonDecode(m.group(0)!) as Map<String, dynamic>;
+    j = jsonDecode(resposta.substring(ini, fim + 1)) as Map<String, dynamic>;
   } catch (_) {
     return null;
   }
+  final fala = (j['fala'] as String?)?.trim();
   switch (j['acao']) {
     case 'temporizador':
       final s = (j['segundos'] as num?)?.toInt() ?? 0;
@@ -583,7 +696,21 @@ Comando? acaoDaIa(String resposta, String falado) {
       };
       final tela = '${j['tela'] ?? ''}';
       if (!validas.contains(tela)) return null;
-      return Comando(TipoComando.abrirTela, falado, tela: tela);
+      return Comando(TipoComando.abrirTela, falado, tela: tela, fala: fala);
+    case 'card':
+      final secoes = <(String, List<String>)>[
+        for (final s in (j['secoes'] as List? ?? const []).whereType<Map>())
+          (
+            '${s['titulo'] ?? ''}'.trim(),
+            [
+              for (final i in (s['itens'] as List? ?? const []))
+                if ('$i'.trim().isNotEmpty) '$i'.trim()
+            ]
+          ),
+      ].where((s) => s.$2.isNotEmpty).toList();
+      if (secoes.isEmpty) return null;
+      return Comando(TipoComando.card, falado,
+          card: CardJarvis('${j['titulo'] ?? ''}'.trim(), secoes), fala: fala);
   }
   return null;
 }

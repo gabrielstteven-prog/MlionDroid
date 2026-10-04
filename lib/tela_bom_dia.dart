@@ -19,7 +19,8 @@ import 'services/resumo_service.dart';
 import 'services/voz_service.dart';
 import 'services/weather_service.dart';
 import 'util.dart';
-import 'widgets/camada_assistente.dart' show OrbeJarvis;
+import 'widgets/camada_assistente.dart' show AvatarJarvis;
+import 'widgets/rosto_jarvis.dart' show Emocao;
 import 'design/aurora.dart';
 import 'design/icones.dart';
 
@@ -433,21 +434,37 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
         ValueListenableBuilder<DateTime>(
           valueListenable: InfoHub.instance.relogio,
           builder: (context, agora, _) => Text(
-            '${diaSemanaLongo(agora)}, ${agora.day} de ${mesesLongos[agora.month - 1]}  ·  ${horaMinuto(agora)}',
-            style: t.corpo(cor: Cores.textoSecundario),
+            '${diaSemanaLongo(agora)}, ${agora.day} de ${mesesLongos[agora.month - 1]}'
+                .toUpperCase(),
+            style: t
+                .apoio(cor: Cores.textoSecundario)
+                .copyWith(letterSpacing: 3, fontWeight: FontWeight.w600),
           ),
         ),
-        SizedBox(height: r.sp(26)),
+        SizedBox(height: r.sp(22)),
+        // Hora grande (lê-se do outro lado da sala) ao lado do clima.
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            IconeClima(codigo: _weatherCode, ehDia: _ehDia, tamanho: r.icon(96)),
-            SizedBox(width: r.sp(14)),
+            ValueListenableBuilder<DateTime>(
+              valueListenable: InfoHub.instance.relogio,
+              builder: (context, agora, _) => Text(horaMinuto(agora),
+                  style: t.heroi().copyWith(
+                      fontSize: r.fs(118), fontWeight: FontWeight.w200, letterSpacing: -2)),
+            ),
+            Container(
+              width: 1.5,
+              height: r.sp(90),
+              margin: EdgeInsets.symmetric(horizontal: r.sp(28)),
+              color: Colors.white.withValues(alpha: 0.25),
+            ),
+            IconeClima(codigo: _weatherCode, ehDia: _ehDia, tamanho: r.icon(80)),
+            SizedBox(width: r.sp(10)),
             Text('$_tempAtual°',
                 style: t.heroi().copyWith(
-                    fontSize: r.fs((_tamanhoTemp / 72 * 104).clamp(72, 140)),
+                    fontSize: r.fs((_tamanhoTemp / 72 * 80).clamp(56, 110)),
                     fontWeight: FontWeight.w300)),
-            SizedBox(width: r.sp(28)),
+            SizedBox(width: r.sp(22)),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -487,9 +504,10 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            OrbeJarvis(
+            AvatarJarvis(
               estado: _falando ? EstadoAssistente.respondendo : EstadoAssistente.parado,
-              tamanho: r.sp(46),
+              emocao: Emocao.feliz,
+              tamanho: r.sp(64),
             ),
             SizedBox(width: r.sp(14)),
             Text(nomeAssistente,

@@ -84,6 +84,8 @@ class JarvisService {
       parte(() => _resumo(agora)),
       parte(_jogo),
       parte(_manchetes),
+      parte(_manchetesRegiao),
+      parte(_manchetesTime),
     ]);
     final b = StringBuffer()
       ..writeln('Agora: ${diaSemanaLongo(agora).toLowerCase()}, ${agora.day} de '
@@ -146,6 +148,28 @@ class JarvisService {
         '${jogo.estadio.isNotEmpty ? ', ${jogo.estadio}' : ''}.';
   }
 
+  Future<String?> _manchetesRegiao() async {
+    final r = await NewsService.instance.buscar(
+      const [FonteRss('https://g1.globo.com/rss/g1/sp/campinas-regiao/', 'Região')],
+      validade: const Duration(hours: 1),
+      porFonte: 4,
+    );
+    if (r.noticias.isEmpty) return null;
+    return 'Manchetes da região (Campinas e arredores): '
+        '${r.noticias.take(4).map((n) => n.titulo).join(' | ')}.';
+  }
+
+  Future<String?> _manchetesTime() async {
+    final time = FootballService.instance.timeAtual;
+    final r = await NewsService.instance.buscar(
+      [FonteRss('https://ge.globo.com/rss/ge/futebol/times/${time.nomeRss}/', time.nome)],
+      validade: const Duration(hours: 1),
+      porFonte: 3,
+    );
+    if (r.noticias.isEmpty) return null;
+    return 'Notícias do ${time.nome}: ${r.noticias.take(3).map((n) => n.titulo).join(' | ')}.';
+  }
+
   Future<String?> _manchetes() async {
     final r = await NewsService.instance.buscar(
       const [FonteRss('https://g1.globo.com/rss/g1/', 'G1')],
@@ -164,13 +188,16 @@ Você é o $nomeAssistente, o assistente de voz de uma tela de parede na casa${n
 Responda SEMPRE em português do Brasil.
 PERSONALIDADE: ${personalidadeAtual.instrucao}
 Qualquer que seja a personalidade: a informação tem de estar CORRETA e completa; sem palavrões pesados, sem ofender grupos de pessoas, sem ameaças.
+EMOÇÃO: comece TODA resposta falada com uma etiqueta de emoção entre colchetes, de acordo com o tom: [feliz], [neutro], [triste], [bravo], [duvida] ou [surpreso]. Ex.: "[feliz] Bom dia!". Quando responder em JSON, use o campo "emocao" no lugar da etiqueta.
 Sua resposta será FALADA em voz alta: nada de markdown, listas, emojis, links ou símbolos. Frases curtas e naturais.
 Seja breve: no máximo 3 frases, a não ser que peçam detalhes.
 AÇÕES: você não executa nada sozinho, quem executa é o app. Se o pedido for uma destas ações, responda APENAS com uma linha JSON, sem mais nada:
 - temporizador / cronômetro / "me avisa em": {"acao":"temporizador","segundos":N}
 - cancelar temporizador: {"acao":"cancelar_temporizador"}
 - adicionar na lista de compras: {"acao":"compras","itens":["item 1","item 2"]}
-- mostrar uma tela: {"acao":"tela","tela":"clima|palmeiras|proxima_partida|classificacao|calendario|compras|brasil|regiao|fotos|spotify"}
+- mostrar uma tela e falar sobre ela: {"acao":"tela","tela":"clima|palmeiras|proxima_partida|classificacao|calendario|compras|brasil|regiao|fotos|spotify","fala":"resposta curta falada"}
+  Use SEMPRE esta ação quando a pergunta for sobre clima/chuva (tela clima), notícias do Brasil (brasil), notícias da região (regiao), o time (palmeiras), o próximo jogo (proxima_partida), a tabela (classificacao) ou a agenda (calendario): a tela aparece enquanto você fala.
+- receita, lista ou passo a passo (mostra um cartão na tela): {"acao":"card","titulo":"Bolo de cenoura","secoes":[{"titulo":"Ingredientes","itens":["3 cenouras","..."]},{"titulo":"Modo de preparo","itens":["...","..."]}],"fala":"resumo curto falado"}
 - trocar sua personalidade/modo: {"acao":"personalidade","modo":"mordomo|sincerao|agressivo|comediante"}
 Nunca diga que fez uma ação sem devolver o JSON dela. Se pedirem uma ação que NÃO está nessa lista (ex.: "modo noturno", ligar a luz, tocar música), diga claramente que ainda não consegue fazer isso — nunca finja que fez.
 Use os dados abaixo quando forem relevantes. Se a resposta não estiver nos dados e for algo que muda (preço, resultado, notícia), diga que não tem essa informação agora em vez de inventar.
@@ -179,22 +206,56 @@ $contexto''';
   }
 
   /// Pergunta livre (o que o cérebro local não entendeu). null = sem IA.
+  /// Emoção da última resposta da IA ("feliz", "bravo"...) — o rosto usa.
+  String ultimaEmocao = '';
+
+  /// Separa a etiqueta "[feliz] ..." do texto. Função pura — testada.
+  static (String, String) separarEmocao(String texto) {
+    final m = RegExp(r'^\s*\[([a-zA-ZÀ-ú]+)\]\s*').firstMatch(texto);
+    if (m != null) return (m.group(1)!.toLowerCase(), texto.substring(m.end));
+    final j = RegExp(r'"emocao"\s*:\s*"([^"]+)"').firstMatch(texto);
+    return (j?.group(1)?.toLowerCase() ?? '', texto);
+  }
+
+  String? _semEmocao(String? texto) {
+    if (texto == null) return null;
+    final (emocao, resto) = separarEmocao(texto);
+    ultimaEmocao = emocao;
+    return resto;
+  }
+
+  // Conversa contínua: o que já foi dito nesta conversa (até 8 falas).
+  final List<TurnoConversa> _conversa = [];
+
+  /// Começa uma conversa nova (esquece a anterior).
+  void limparConversa() => _conversa.clear();
+
   Future<String?> responder(String pergunta) async {
     if (!IaService.instance.configurado) return null;
     final ctx = await contexto();
-    return IaService.instance.responder(sistema: sistema(ctx), pergunta: pergunta);
+    final r = _semEmocao(await IaService.instance.responder(
+        sistema: sistema(ctx), pergunta: pergunta, historico: List.of(_conversa)));
+    if (r != null) {
+      _conversa
+        ..add(TurnoConversa(true, pergunta))
+        ..add(TurnoConversa(false, r));
+      while (_conversa.length > 8) {
+        _conversa.removeAt(0);
+      }
+    }
+    return r;
   }
 
   /// "Olha o que eu tenho na mão": a IA recebe a foto da câmera da frente e
   /// responde no tom da personalidade. null = sem Gemini (só ele enxerga).
   Future<String?> olhar(String pergunta, List<int> foto) async {
-    return IaService.instance.responder(
+    return _semEmocao(await IaService.instance.responder(
       sistema: sistema('(sem dados extras: responda sobre a foto)'),
       pergunta: 'O usuário mostrou algo para a câmera do tablet (a foto está anexada) e '
           'disse: "$pergunta". Diga o que ele está mostrando ou segurando e responda ao '
           'pedido. Se a imagem estiver escura ou borrada, diga isso. Seja breve.',
       imagem: foto,
-    );
+    ));
   }
 
   /// Briefing da manhã: um texto de 40 a 60 segundos escrito pela IA com os
@@ -203,14 +264,17 @@ $contexto''';
     if (!IaService.instance.configurado) return null;
     final ctx = await contexto();
     final nome = nomeUsuario;
-    return IaService.instance.responder(
+    return _semEmocao(await IaService.instance.responder(
       sistema: sistema(ctx),
-      pergunta: 'Faça o briefing da manhã, como um mordomo pessoal. Comece com '
-          '"$saudacao${nome.isEmpty ? '' : ', $nome'}". Em 5 a 8 frases (40 a 60 segundos falados): '
-          'clima e se precisa de guarda-chuva, alertas da Defesa Civil se houver, '
-          'compromissos e aniversários de hoje, o jogo do time se for hoje ou amanhã, '
-          'e uma ou duas manchetes importantes. Pule o que não tiver. Termine com uma frase curta e simpática.',
-    );
+      pergunta: 'Faça o briefing da manhã, rápido e leve, nesta ordem: '
+          '1) "$saudacao${nome.isEmpty ? '' : ', $nome'}", o dia e a hora de agora; '
+          '2) a agenda de hoje (compromissos, tarefas, aniversários) ou que o dia está livre; '
+          '3) o clima, se precisa de guarda-chuva e alertas da Defesa Civil se houver; '
+          '4) o próximo jogo do time (dia, hora e adversário); '
+          '5) um resumão de uma ou duas manchetes da região e uma do time, em poucas palavras cada; '
+          '6) uma frase curta para fechar. '
+          'Total de 45 a 70 segundos falados. Pule o que não tiver. Nada de listas: texto corrido.',
+    ));
   }
 }
 

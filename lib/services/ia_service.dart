@@ -39,8 +39,13 @@ class IaService {
   /// Responde [pergunta] seguindo as instruções de [sistema]. Devolve null
   /// se nenhum provedor estiver configurado ou todos falharem.
   /// Com [imagem] (JPEG), só o Gemini responde: ele enxerga a foto.
+  /// [historico]: as falas anteriores desta conversa (conversa contínua).
   Future<String?> responder(
-      {required String sistema, required String pergunta, List<int>? imagem}) async {
+      {required String sistema,
+      required String pergunta,
+      List<int>? imagem,
+      List<TurnoConversa> historico = const []}) async {
+    _historico = historico;
     motivoFalha = '';
     if (_chaveGemini.isEmpty && (imagem != null || _chaveGroq.isEmpty)) {
       motivoFalha = imagem != null
@@ -77,6 +82,8 @@ class IaService {
     }
     return null;
   }
+
+  List<TurnoConversa> _historico = const [];
 
   /// Por que a última resposta falhou, em português, para o Jarvis falar.
   String motivoFalha = '';
@@ -155,6 +162,13 @@ class IaService {
               ]
             },
             'contents': [
+              for (final h in _historico)
+                {
+                  'role': h.doUsuario ? 'user' : 'model',
+                  'parts': [
+                    {'text': h.texto}
+                  ]
+                },
               {
                 'role': 'user',
                 'parts': [
@@ -197,6 +211,8 @@ class IaService {
             'temperature': 0.7,
             'messages': [
               {'role': 'system', 'content': sistema},
+              for (final h in _historico)
+                {'role': h.doUsuario ? 'user' : 'assistant', 'content': h.texto},
               {'role': 'user', 'content': pergunta},
             ],
           }),
@@ -243,3 +259,10 @@ class IaService {
 }
 
 class _Recusado implements Exception {}
+
+/// Uma fala da conversa: do usuário ou do assistente.
+class TurnoConversa {
+  final bool doUsuario;
+  final String texto;
+  const TurnoConversa(this.doUsuario, this.texto);
+}

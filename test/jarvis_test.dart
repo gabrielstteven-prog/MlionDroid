@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mlion_droid/services/ia_service.dart';
+import 'package:mlion_droid/services/jarvis_service.dart';
 import 'package:mlion_droid/services/voz_service.dart';
 
 void main() {
@@ -53,6 +54,12 @@ void main() {
     expect(VozService.explicarErro('Exception: ElevenLabs 402: {"detail":{"status":"paid_plan_required"}}'),
         contains('biblioteca'));
     expect(VozService.explicarErro('ElevenLabs 401'), contains('chave'));
+  });
+
+  test('etiqueta de emoção sai do texto e vira a emoção do rosto', () {
+    expect(JarvisService.separarEmocao('[feliz] Bom dia!'), ('feliz', 'Bom dia!'));
+    expect(JarvisService.separarEmocao('Sem etiqueta.'), ('', 'Sem etiqueta.'));
+    expect(JarvisService.separarEmocao('{"acao":"tela","emocao":"bravo"}').$1, 'bravo');
   });
 
   test('ElevenLabs: lista de vozes', () {
