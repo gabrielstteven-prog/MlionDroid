@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +10,6 @@ import 'cache_manager.dart';
 import 'config_manager.dart';
 import 'design/tema.dart';
 import 'info_hub.dart';
-import 'performance_manager.dart';
 import 'responsive.dart';
 import 'services/fotos_service.dart';
 import 'services/assistente_service.dart';
@@ -22,6 +20,7 @@ import 'services/voz_service.dart';
 import 'services/weather_service.dart';
 import 'util.dart';
 import 'widgets/camada_assistente.dart' show OrbeJarvis;
+import 'design/aurora.dart';
 import 'design/icones.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -62,12 +61,9 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
   Timer? _antiTravamento;
 
   // ── Controllers ───────────────────────────────────────────────────────────
-  late AnimationController _bgCtrl; // fundo animado infinito
   late AnimationController _entradaCtrl; // fade-in de entrada
-  late AnimationController _floatCtrl; // partículas flutuantes
   late Animation<double> _entradaAnim;
 
-  final List<_Particula> _particulas = [];
 
   // ── Config ────────────────────────────────────────────────────────────────
   /// Nome na saudação. Vazio (ou o antigo padrão "Bem-vindo") = sem nome,
@@ -102,7 +98,7 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
     FontStyle fontStyle = FontStyle.normal,
     List<Shadow>? shadows,
   }) {
-    final base = _cfg.getString('bom_dia', 'fonte', 'poppins');
+    final base = _cfg.getString('bom_dia', 'fonte', 'bricolage');
     final estilo = TextStyle(
         fontSize: fontSize,
         fontWeight: fontWeight,
@@ -119,8 +115,10 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
         return GoogleFonts.roboto(textStyle: estilo);
       case 'exo2':
         return GoogleFonts.exo2(textStyle: estilo);
-      default:
+      case 'poppins':
         return GoogleFonts.poppins(textStyle: estilo);
+      default:
+        return GoogleFonts.bricolageGrotesque(textStyle: estilo);
     }
   }
 
@@ -138,34 +136,10 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
   void initState() {
     super.initState();
 
-    _bgCtrl =
-        AnimationController(vsync: this, duration: const Duration(seconds: 12));
     _entradaCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 1400));
-    _floatCtrl =
-        AnimationController(vsync: this, duration: const Duration(seconds: 18));
-
-    // Fundo, ícone, pulso e partículas são decorativos — só em loop no modo
-    // visual completo.
-    if (PerformanceManager.instance.animacoesDecorativasAtivas) {
-      _bgCtrl.repeat(reverse: true);
-      _floatCtrl.repeat();
-    }
-
     _entradaAnim =
         CurvedAnimation(parent: _entradaCtrl, curve: Curves.easeOutCubic);
-
-    final rng = math.Random();
-    for (int i = 0; i < 30; i++) {
-      _particulas.add(_Particula(
-        x: rng.nextDouble(),
-        y: rng.nextDouble(),
-        size: rng.nextDouble() * 4 + 1.5,
-        speed: rng.nextDouble() * 0.25 + 0.08,
-        phase: rng.nextDouble() * math.pi * 2,
-        opacity: rng.nextDouble() * 0.5 + 0.1,
-      ));
-    }
 
     _entradaCtrl.forward();
     _carregarDados();
@@ -176,9 +150,7 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    _bgCtrl.dispose();
     _entradaCtrl.dispose();
-    _floatCtrl.dispose();
     _saidaTimer?.cancel();
     _antiTravamento?.cancel();
     super.dispose();
@@ -310,25 +282,12 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
     final r = R(context);
     final theme = _climaTheme;
 
+    // O fundo é o céu do app (com a aurora) — sem bolinhas, partículas nem
+    // riscos desenhados: só uma base escura leve para a leitura.
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // Fundo e partículas são pintados com `repaint:` dentro de um
-          // RepaintBoundary — a animação NÃO reconstrói o conteúdo da tela
-          // (antes a tela inteira, com imagens e textos, era refeita 60x/s).
-          Positioned.fill(
-            child: RepaintBoundary(
-              child: CustomPaint(
-                painter: _FundoClimaticoPainter(anim: _bgCtrl, theme: theme),
-                foregroundPainter: _ParticulasPainter(
-                  particulas: _particulas,
-                  anim: _floatCtrl,
-                  theme: theme,
-                ),
-              ),
-            ),
-          ),
           Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -336,11 +295,11 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withValues(alpha: 0.10),
-                    Colors.black.withValues(alpha: 0.45),
-                    Colors.black.withValues(alpha: 0.75),
+                    Colors.black.withValues(alpha: 0.0),
+                    Colors.black.withValues(alpha: 0.18),
+                    Colors.black.withValues(alpha: 0.38),
                   ],
-                  stops: const [0.0, 0.55, 1.0],
+                  stops: const [0.0, 0.6, 1.0],
                 ),
               ),
             ),
@@ -433,8 +392,12 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
   Widget _buildAbertura(R r, _ClimaTheme theme) {
     final t = Tipo(r);
     final nome = _nomeUsuario;
-    final corNome = _corDestaqueHex.isEmpty ? theme.corDestaque : _resolverCorDestaque(theme);
     final tamanho = r.fs(_tamanhoNome.clamp(28, 72) * 1.7);
+    // Nome em degradê nas cores da aurora do horário (ou na cor escolhida
+    // nas Configurações).
+    final coresNome = _corDestaqueHex.isEmpty
+        ? Aurora.paleta(periodoDaHora(DateTime.now().hour))
+        : [_resolverCorDestaque(theme), _resolverCorDestaque(theme)];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -442,17 +405,28 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
-          child: RichText(
-            text: TextSpan(children: [
-              TextSpan(
-                  text: nome.isEmpty ? _saudacao : '$_saudacao, ',
-                  style: _fonteEstilo(fontSize: tamanho, fontWeight: FontWeight.w300)),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(nome.isEmpty ? _saudacao : '$_saudacao, ',
+                  style: _fonteEstilo(
+                      fontSize: tamanho, fontWeight: FontWeight.w300, height: 1.05)),
               if (nome.isNotEmpty)
-                TextSpan(
-                    text: nome,
-                    style: _fonteEstilo(
-                        fontSize: tamanho, fontWeight: FontWeight.w700, color: corNome)),
-            ]),
+                ShaderMask(
+                  blendMode: BlendMode.srcIn,
+                  shaderCallback: (b) => LinearGradient(
+                    colors: [
+                      Color.lerp(coresNome[0], Colors.white, 0.35)!,
+                      Color.lerp(coresNome[1 % coresNome.length], Colors.white, 0.25)!,
+                    ],
+                  ).createShader(b),
+                  child: Text(nome,
+                      style: _fonteEstilo(
+                          fontSize: tamanho, fontWeight: FontWeight.w700, height: 1.05)),
+                ),
+            ],
           ),
         ),
         SizedBox(height: r.sp(4)),
@@ -738,205 +712,3 @@ class _ClimaTheme {
 
 enum _TipoTempo { sol, solComNuvens, nublado, chuva, noite }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Painter: fundo dinâmico
-// ═══════════════════════════════════════════════════════════════════════════
-class _FundoClimaticoPainter extends CustomPainter {
-  final Animation<double> anim;
-  final _ClimaTheme theme;
-
-  _FundoClimaticoPainter({required this.anim, required this.theme})
-      : super(repaint: anim);
-
-  @override
-  void paint(Canvas canvas, Size s) {
-    final t = anim.value;
-    final lerp = (math.sin(t * math.pi) + 1) / 2;
-    final c0 = Color.lerp(theme.fundoCores[0], theme.fundoCores[1], lerp)!;
-    final c1 = Color.lerp(theme.fundoCores[2], theme.fundoCores[3], lerp)!;
-
-    final bg = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [c0, c1],
-      ).createShader(Rect.fromLTWH(0, 0, s.width, s.height));
-    canvas.drawRect(Rect.fromLTWH(0, 0, s.width, s.height), bg);
-
-    if (theme.tipo == _TipoTempo.sol || theme.tipo == _TipoTempo.solComNuvens) {
-      _pintarSol(canvas, s, lerp);
-    }
-    if (theme.tipo == _TipoTempo.chuva) {
-      _pintarFundoChuva(canvas, s);
-      _pintarNuvens(canvas, s, intensidade: 0.85);
-    }
-    if (theme.tipo == _TipoTempo.nublado) {
-      _pintarFundoNublado(canvas, s, lerp);
-      _pintarNuvens(canvas, s, intensidade: 0.65);
-    }
-    if (theme.tipo == _TipoTempo.solComNuvens) {
-      _pintarNuvens(canvas, s, intensidade: 0.35);
-    }
-  }
-
-  // ── Nuvens orgânicas, formadas por múltiplos círculos sobrepostos ────────
-  void _pintarNuvens(Canvas canvas, Size s, {required double intensidade}) {
-    void desenharNuvem(
-        double cx, double cy, double escala, double opacidadeMult) {
-      final p = Paint()
-        ..color =
-            Colors.white.withValues(alpha: 0.09 * intensidade * opacidadeMult)
-        ..style = PaintingStyle.fill;
-      final blobs = [
-        Offset(cx, cy),
-        Offset(cx + 38 * escala, cy + 6 * escala),
-        Offset(cx - 36 * escala, cy + 8 * escala),
-        Offset(cx + 14 * escala, cy - 14 * escala),
-        Offset(cx - 16 * escala, cy - 10 * escala),
-      ];
-      final radii = [34.0, 26.0, 24.0, 22.0, 20.0];
-      for (int i = 0; i < blobs.length; i++) {
-        canvas.drawCircle(blobs[i], radii[i] * escala, p);
-      }
-    }
-
-    // Três nuvens em profundidades e velocidades diferentes — leve parallax
-    final x1 = ((anim.value * 0.06) % 1.2 - 0.1) * s.width;
-    final x2 = ((anim.value * 0.04 + 0.4) % 1.2 - 0.1) * s.width;
-    final x3 = ((anim.value * 0.05 + 0.75) % 1.2 - 0.1) * s.width;
-
-    desenharNuvem(x1, s.height * 0.14, 1.6, 1.0);
-    desenharNuvem(x2, s.height * 0.24, 1.1, 0.7);
-    desenharNuvem(x3, s.height * 0.09, 1.3, 0.85);
-  }
-
-  void _pintarSol(Canvas canvas, Size s, double lerp) {
-    final cx = s.width * 0.75;
-    final cy = s.height * 0.18;
-    for (int i = 5; i >= 1; i--) {
-      final r = s.width * 0.08 * i;
-      final op = (0.04 - i * 0.005).clamp(0.0, 0.10);
-      canvas.drawCircle(
-          Offset(cx, cy),
-          r,
-          Paint()
-            ..color =
-                const Color(0xFFFFD54F).withValues(alpha: op + lerp * 0.02));
-    }
-    final rayPaint = Paint()
-      ..color = const Color(0xFFFFD54F).withValues(alpha: 0.06 + lerp * 0.03)
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke;
-    for (int i = 0; i < 12; i++) {
-      final angle = i * math.pi / 6 + lerp * 0.2;
-      final r1 = s.width * 0.08;
-      final r2 = s.width * 0.32;
-      canvas.drawLine(
-        Offset(cx + math.cos(angle) * r1, cy + math.sin(angle) * r1),
-        Offset(cx + math.cos(angle) * r2, cy + math.sin(angle) * r2),
-        rayPaint,
-      );
-    }
-  }
-
-  void _pintarFundoChuva(Canvas canvas, Size s) {
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, s.width, s.height),
-      Paint()
-        ..shader = RadialGradient(
-          center: const Alignment(0, -0.5),
-          radius: 1.2,
-          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.30)],
-        ).createShader(Rect.fromLTWH(0, 0, s.width, s.height)),
-    );
-  }
-
-  void _pintarFundoNublado(Canvas canvas, Size s, double lerp) {
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, s.width, s.height),
-      Paint()..color = Colors.white.withValues(alpha: 0.04 + lerp * 0.03),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_FundoClimaticoPainter old) =>
-      old.anim != anim || old.theme.tipo != theme.tipo;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  Painter: partículas ambiente
-// ═══════════════════════════════════════════════════════════════════════════
-class _ParticulasPainter extends CustomPainter {
-  final List<_Particula> particulas;
-  final Animation<double> anim;
-  final _ClimaTheme theme;
-
-  _ParticulasPainter({
-    required this.particulas,
-    required this.anim,
-    required this.theme,
-  }) : super(repaint: anim);
-
-  @override
-  void paint(Canvas canvas, Size s) {
-    final t = anim.value;
-    final p = Paint()..style = PaintingStyle.fill;
-
-    for (final pt in particulas) {
-      double x, y;
-
-      if (theme.tipo == _TipoTempo.chuva) {
-        x = pt.x * s.width +
-            math.sin(t * math.pi * 2 * pt.speed + pt.phase) * 6;
-        y = ((pt.y + t * pt.speed * 0.8) % 1.0) * s.height;
-        p.color = const Color(0xFF90CAF9).withValues(alpha: pt.opacity * 0.6);
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            Rect.fromCenter(
-                center: Offset(x, y), width: 1.5, height: pt.size * 2.5),
-            const Radius.circular(2),
-          ),
-          p,
-        );
-      } else if (theme.tipo == _TipoTempo.nublado) {
-        x = ((pt.x + t * pt.speed * 0.15) % 1.0) * s.width;
-        y = pt.y * s.height * 0.6;
-        p.color = Colors.white.withValues(alpha: pt.opacity * 0.25);
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            Rect.fromCenter(
-                center: Offset(x, y), width: pt.size * 12, height: pt.size * 2),
-            Radius.circular(pt.size),
-          ),
-          p,
-        );
-      } else {
-        x = pt.x * s.width +
-            math.sin(t * math.pi * 2 * pt.speed * 0.3 + pt.phase) *
-                s.width *
-                0.015;
-        y = pt.y * s.height * 0.7;
-        final pulso = (math.sin(t * math.pi * 4 * pt.speed + pt.phase) + 1) / 2;
-        p.color =
-            const Color(0xFFFFECB3).withValues(alpha: pt.opacity * 0.5 * pulso);
-        canvas.drawCircle(Offset(x, y), pt.size * 0.8, p);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_ParticulasPainter old) =>
-      old.anim != anim || old.theme.tipo != theme.tipo;
-}
-
-class _Particula {
-  final double x, y, size, speed, phase, opacity;
-  const _Particula({
-    required this.x,
-    required this.y,
-    required this.size,
-    required this.speed,
-    required this.phase,
-    required this.opacity,
-  });
-}

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import 'config_manager.dart';
 import 'design/icones.dart';
 import 'design/tema.dart';
 import 'info_hub.dart';
@@ -41,11 +42,15 @@ class BarraInfo extends StatelessWidget {
   final String telaAtual;
   final VoidCallback? aoAbrirConfig;
 
+  /// Telas do rodízio, na ordem (para os pontinhos de navegação).
+  final List<String> telasRodizio;
+
   const BarraInfo({
     super.key,
     this.modoManual = false,
     this.telaAtual = 'clima',
     this.aoAbrirConfig,
+    this.telasRodizio = const [],
   });
 
   static double alturaTotal(BuildContext context) {
@@ -59,6 +64,8 @@ class BarraInfo extends StatelessWidget {
     final altura = alturaTotal(context);
     final alturaFaixa = (altura * 0.30).clamp(34.0, 50.0);
     final destaque = (iconesTelas[telaAtual] ?? (Icons.dashboard_rounded, Destaques.clima)).$2;
+    final comPontos = telasRodizio.length > 1 &&
+        ConfigManager().getBool('barra_info', 'mostrar_pontos', true);
 
     return SizedBox(
       height: altura,
@@ -106,7 +113,27 @@ class BarraInfo extends StatelessWidget {
               ),
             ),
           ),
-          SizedBox(height: alturaFaixa, child: _Faixa(destaque: destaque)),
+          SizedBox(
+            height: alturaFaixa,
+            child: Stack(children: [
+              Positioned.fill(
+                // Espaço à direita para os pontinhos (o texto não passa por baixo).
+                right: comPontos ? r.sp(64 + telasRodizio.length * 13.0) : 0,
+                child: _Faixa(destaque: destaque),
+              ),
+              // Pontinhos de navegação: onde estou no rodízio (bem discretos).
+              if (comPontos)
+                Positioned(
+                  right: r.sp(32),
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: _Pontos(
+                        telas: telasRodizio, atual: telaAtual, cor: destaque),
+                  ),
+                ),
+            ]),
+          ),
         ],
       ),
     );
@@ -502,6 +529,7 @@ class MlionShell extends StatelessWidget {
   final bool mostrarBarra;
   final String telaAtual;
   final VoidCallback? aoAbrirConfig;
+  final List<String> telasRodizio;
 
   const MlionShell({
     super.key,
@@ -510,6 +538,7 @@ class MlionShell extends StatelessWidget {
     this.mostrarBarra = true,
     this.telaAtual = 'clima',
     this.aoAbrirConfig,
+    this.telasRodizio = const [],
   });
 
   @override
@@ -531,6 +560,7 @@ class MlionShell extends StatelessWidget {
                   modoManual: modoManual,
                   telaAtual: telaAtual,
                   aoAbrirConfig: aoAbrirConfig,
+                  telasRodizio: telasRodizio,
                 ),
                 Expanded(child: child),
               ],
@@ -603,6 +633,37 @@ class _PlacarAoVivo extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Pontinhos de navegação do rodízio: a tela atual vira um tracinho na cor
+/// dela; as outras são pontos apagados.
+class _Pontos extends StatelessWidget {
+  final List<String> telas;
+  final String atual;
+  final Color cor;
+  const _Pontos({required this.telas, required this.atual, required this.cor});
+
+  @override
+  Widget build(BuildContext context) {
+    final r = R(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final t in telas)
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOutCubic,
+            margin: EdgeInsets.symmetric(horizontal: r.sp(3)),
+            width: r.sp(t == atual ? 22 : 7),
+            height: r.sp(7),
+            decoration: BoxDecoration(
+              color: t == atual ? cor : Colors.white.withValues(alpha: 0.28),
+              borderRadius: BorderRadius.circular(r.sp(4)),
+            ),
+          ),
+      ],
     );
   }
 }

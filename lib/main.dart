@@ -602,6 +602,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
         telaAtual: _telaExibida,
         mostrarBarra: _telaExibida != 'bom_dia',
         aoAbrirConfig: _abrirConfig,
+        telasRodizio: _ordem.where(_elegiveis.contains).toList(),
         child: Scaffold(
           backgroundColor: Colors.transparent, // o céu do app aparece atrás
           body: GestureDetector(

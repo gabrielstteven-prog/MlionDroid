@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../config_manager.dart';
 import '../responsive.dart';
+import 'aurora.dart';
 import '../times.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -161,6 +163,16 @@ class CeuDeFundo extends StatelessWidget {
               ),
             ),
           ),
+          // Aurora: manchas de luz que passeiam devagar (Configurações >
+          // Geral > Fundo aurora).
+          if (ConfigManager().getBool('geral', 'fundo_aurora', true))
+            Positioned.fill(
+              child: Aurora(
+                cores: cor == null
+                    ? Aurora.paleta(periodoDaHora(agora.hour))
+                    : Aurora.daCor(cor),
+              ),
+            ),
           // Base levemente mais escura: ancora a tela e ajuda a leitura
           const DecoratedBox(
             decoration: BoxDecoration(
