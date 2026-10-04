@@ -41,6 +41,13 @@ class IaService {
   /// Com [imagem] (JPEG), só o Gemini responde: ele enxerga a foto.
   Future<String?> responder(
       {required String sistema, required String pergunta, List<int>? imagem}) async {
+    motivoFalha = '';
+    if (_chaveGemini.isEmpty && (imagem != null || _chaveGroq.isEmpty)) {
+      motivoFalha = imagem != null
+          ? 'Para enxergar eu preciso da chave do Gemini nas Configurações.'
+          : 'A inteligência artificial não está configurada.';
+      return null;
+    }
     if (_chaveGemini.isNotEmpty) {
       try {
         final r = await _gemini(sistema, pergunta, imagem);
@@ -48,8 +55,10 @@ class IaService {
           ultimoProvedor = 'Gemini';
           return r;
         }
+        motivoFalha = 'O Gemini não devolveu resposta. Tente de novo.';
       } catch (e) {
         debugPrint('IA Gemini: $e');
+        motivoFalha = explicarFalha(e);
       }
     }
     if (imagem != null) return null; // o Groq não enxerga imagens
@@ -58,13 +67,36 @@ class IaService {
         final r = await _groq(sistema, pergunta);
         if (r != null && r.isNotEmpty) {
           ultimoProvedor = 'Groq';
+          motivoFalha = '';
           return r;
         }
       } catch (e) {
         debugPrint('IA Groq: $e');
+        if (motivoFalha.isEmpty) motivoFalha = explicarFalha(e);
       }
     }
     return null;
+  }
+
+  /// Por que a última resposta falhou, em português, para o Jarvis falar.
+  String motivoFalha = '';
+
+  /// Traduz o erro da IA para algo que dá para entender. Função pura — testada.
+  static String explicarFalha(Object e) {
+    final s = '$e';
+    if (s.contains('HTTP 503') || s.contains('HTTP 500') || s.contains('UNAVAILABLE')) {
+      return 'O Gemini está sobrecarregado agora. Tente de novo daqui a pouco.';
+    }
+    if (s.contains('HTTP 429')) {
+      return 'Passei do limite gratuito da inteligência artificial por agora. Tente mais tarde.';
+    }
+    if (s.contains('HTTP 400') && s.contains('API key') || s.contains('HTTP 401') || s.contains('HTTP 403')) {
+      return 'A chave da inteligência artificial foi recusada. Confira nas Configurações.';
+    }
+    if (s.contains('SocketException') || s.contains('TimeoutException') || s.contains('Failed host')) {
+      return 'Estou sem internet ou a resposta demorou demais. Tente de novo.';
+    }
+    return 'A inteligência artificial falhou agora. Tente de novo.';
   }
 
   /// Pede "raciocínio leve" (respostas curtas de assistente não precisam
@@ -72,23 +104,49 @@ class IaService {
   /// de novo sem ele.
   bool _aceitaNivelDeRaciocinio = true;
 
+  /// Modelos de reserva (também gratuitos): quando o principal está
+  /// sobrecarregado (erro 503, comum no plano gratuito), tenta estes.
+  static const _reservasGemini = ['gemini-3.5-flash', 'gemini-3.5-flash-lite'];
+
   Future<String?> _gemini(String sistema, String pergunta, List<int>? imagem) async {
+    final modelos = {_modeloGemini, ..._reservasGemini}.toList();
+    Object? ultimoErro;
+    for (var i = 0; i < modelos.length; i++) {
+      try {
+        return await _geminiModelo(modelos[i], sistema, pergunta, imagem);
+      } catch (e) {
+        ultimoErro = e;
+        final s = '$e';
+        final sobrecarga = s.contains('HTTP 503') || s.contains('HTTP 500') || s.contains('HTTP 429');
+        // Só vale tentar outro modelo se o problema for sobrecarga/limite;
+        // chave errada ou sem internet falham igual em qualquer modelo.
+        if (!sobrecarga) rethrow;
+        debugPrint('IA Gemini: ${modelos[i]} sobrecarregado, tentando o próximo');
+        await Future.delayed(const Duration(milliseconds: 800));
+      }
+    }
+    throw ultimoErro!;
+  }
+
+  Future<String?> _geminiModelo(
+      String modelo, String sistema, String pergunta, List<int>? imagem) async {
     if (_aceitaNivelDeRaciocinio) {
       try {
-        return await _chamarGemini(sistema, pergunta, imagem, raciocinioLeve: true);
+        return await _chamarGemini(modelo, sistema, pergunta, imagem, raciocinioLeve: true);
       } on _Recusado {
         _aceitaNivelDeRaciocinio = false;
       }
     }
-    return _chamarGemini(sistema, pergunta, imagem, raciocinioLeve: false);
+    return _chamarGemini(modelo, sistema, pergunta, imagem, raciocinioLeve: false);
   }
 
-  Future<String?> _chamarGemini(String sistema, String pergunta, List<int>? imagem,
+  Future<String?> _chamarGemini(
+      String modelo, String sistema, String pergunta, List<int>? imagem,
       {required bool raciocinioLeve}) async {
     final res = await http
         .post(
           Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/'
-              '$_modeloGemini:generateContent'),
+              '$modelo:generateContent'),
           headers: {'x-goog-api-key': _chaveGemini, 'Content-Type': 'application/json'},
           body: jsonEncode({
             'systemInstruction': {

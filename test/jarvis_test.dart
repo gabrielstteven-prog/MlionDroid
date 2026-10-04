@@ -37,6 +37,12 @@ void main() {
       expect(r, 'Chuva às 17h\nLeve casaco');
     });
 
+    test('falha da IA vira explicação certa (503 não é chave errada)', () {
+      expect(IaService.explicarFalha(Exception('HTTP 503: high demand')), contains('sobrecarregado'));
+      expect(IaService.explicarFalha(Exception('HTTP 403: forbidden')), contains('chave'));
+      expect(IaService.explicarFalha(Exception('HTTP 429: quota')), contains('limite'));
+    });
+
     test('limpa markdown para a voz não ler símbolos', () {
       expect(IaService.limparParaFala('## Título\n**forte** e `código`'),
           'Título\nforte e código');

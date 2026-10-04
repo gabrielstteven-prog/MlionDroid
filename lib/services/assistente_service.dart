@@ -9,6 +9,7 @@ import '../sistema.dart';
 import '../util.dart';
 import 'football_service.dart';
 import 'google_auth_service.dart';
+import 'ia_service.dart';
 import 'jarvis_service.dart';
 import 'resumo_service.dart';
 import 'voz_service.dart';
@@ -373,8 +374,7 @@ class AssistenteService extends ChangeNotifier {
         ultimaFoto = foto;
         notifyListeners();
         final visto = await JarvisService.instance.olhar(c.textoOriginal, foto);
-        return visto ??
-            'Tirei a foto, mas para enxergar eu preciso da chave do Gemini nas Configurações.';
+        return visto ?? IaService.instance.motivoFalha;
       case TipoComando.sair:
         // Dá tempo de falar a despedida antes de apagar a tela.
         Timer(const Duration(seconds: 5), () => ausente.value = true);
@@ -404,6 +404,7 @@ class AssistenteService extends ChangeNotifier {
           if (acao != null) return _executar(acao);
           return ia;
         }
+        if (IaService.instance.configurado) return IaService.instance.motivoFalha;
         return 'Ainda não sei responder isso. Tente: timer de 10 minutos, '
             'vai chover hoje, adiciona leite na lista, ou quando é o próximo jogo. '
             'Para perguntas livres, configure a inteligência artificial nas Configurações.';

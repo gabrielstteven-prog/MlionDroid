@@ -197,7 +197,7 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
       final r = await JarvisService.instance
           .responder('Apresente-se em uma frase e diga como está o tempo agora.');
       status = r == null
-          ? 'Não respondeu. Confira a chave e a internet.'
+          ? IaService.instance.motivoFalha
           : '${IaService.instance.ultimoProvedor}: $r';
     }
     if (!mounted) return;

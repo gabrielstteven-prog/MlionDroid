@@ -188,7 +188,6 @@ $contexto''';
   /// "Olha o que eu tenho na mão": a IA recebe a foto da câmera da frente e
   /// responde no tom da personalidade. null = sem Gemini (só ele enxerga).
   Future<String?> olhar(String pergunta, List<int> foto) async {
-    if (!IaService.instance.configurado) return null;
     return IaService.instance.responder(
       sistema: sistema('(sem dados extras: responda sobre a foto)'),
       pergunta: 'O usuário mostrou algo para a câmera do tablet (a foto está anexada) e '
