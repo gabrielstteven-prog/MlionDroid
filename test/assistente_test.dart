@@ -7,6 +7,12 @@ import 'package:mlion_droid/times.dart';
 
 void main() {
   group('Teste real no tablet (03/10)', () {
+    test('visão: o que tenho na mão', () {
+      expect(interpretar('Jarvis, olha o que eu tenho na mão').tipo, TipoComando.olhar);
+      expect(interpretar('o que é isso?').tipo, TipoComando.olhar);
+      expect(interpretar('veja isso aqui').tipo, TipoComando.olhar);
+      expect(interpretar('quero ver o jogo').tipo, isNot(TipoComando.olhar));
+    });
     test('saindo / chegando em casa', () {
       expect(interpretar('Jarvis, estou saindo').tipo, TipoComando.sair);
       expect(interpretar('tô saindo').tipo, TipoComando.sair);

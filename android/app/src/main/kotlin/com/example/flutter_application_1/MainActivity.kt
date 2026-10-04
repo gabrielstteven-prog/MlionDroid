@@ -161,6 +161,19 @@ class MainActivity : FlutterActivity() {
                 "cameraPermitida" -> result.success(
                     checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
                 )
+                "tirarFoto" -> {
+                    if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(arrayOf(Manifest.permission.CAMERA), 78)
+                        result.success("sem_permissao")
+                    } else {
+                        // A câmera atende um de cada vez: pausa a vigilância do
+                        // descanso (se estiver ligada) antes da foto.
+                        DescansoService.parar(this)
+                        window.decorView.postDelayed({
+                            FotoRapida.tirar(this) { caminho -> runOnUiThread { result.success(caminho) } }
+                        }, 500)
+                    }
+                }
                 "pedirCamera" -> {
                     requestPermissions(arrayOf(Manifest.permission.CAMERA), 78)
                     result.success(null)

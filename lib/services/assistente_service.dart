@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:convert';
 import 'dart:async';
 
@@ -35,6 +36,7 @@ enum TipoComando {
   resumo,
   abrirTela,
   personalidade,
+  olhar, // "olha o que eu tenho na mão": foto + IA
   sair, // "estou saindo": modo ausente
   chegar, // "cheguei"
   desconhecido,
@@ -112,6 +114,14 @@ Comando interpretar(String falado) {
     if (itens.isNotEmpty) {
       return Comando(TipoComando.adicionarCompra, falado, itens: itens);
     }
+  }
+
+  // Visão: "olha o que eu tenho na mão", "o que é isso?", "veja isso aqui"
+  if (RegExp(r'\b(olha|olhe|olhar|veja|enxerga|identifica|reconhece)\b.*\b(isso|aqui|mao|segurando|mostrando|tenho)\b|'
+          r'\bo que (e|eh) isso\b|\bque (objeto|coisa) e essa\b|\bna minha mao\b|\bestou segurando\b|'
+          r'\bto segurando\b|\bestou mostrando\b')
+      .hasMatch(f)) {
+    return Comando(TipoComando.olhar, falado);
   }
 
   // Saindo / chegando em casa
@@ -219,6 +229,9 @@ class AssistenteService extends ChangeNotifier {
   /// Pedido para o rodízio mostrar uma tela ("mostra o clima").
   final ValueNotifier<String?> pedidoDeTela = ValueNotifier(null);
 
+  /// Foto que o Jarvis acabou de tirar (aparece no orbe).
+  Uint8List? ultimaFoto;
+
   /// Modo ausente ("estou saindo"): a tela descansa até alguém chegar.
   final ValueNotifier<bool> ausente = ValueNotifier(false);
 
@@ -249,6 +262,7 @@ class AssistenteService extends ChangeNotifier {
     estado = EstadoAssistente.ouvindo;
     ultimaFala = '';
     ultimaResposta = '';
+    ultimaFoto = null;
     notifyListeners();
     // Mostra no orbe o que já foi entendido, palavra por palavra.
     void parcial() {
@@ -346,6 +360,21 @@ class AssistenteService extends ChangeNotifier {
         final itens = await ResumoService.instance.montar();
         if (itens.isEmpty) return 'Ainda não tenho informações do seu dia.';
         return itens.map((i) => i.texto).join(' ').replaceAll('°', ' graus');
+      case TipoComando.olhar:
+        ultimaResposta = 'Deixa eu ver...';
+        notifyListeners();
+        final caminho = await Sistema.tirarFoto();
+        ultimaResposta = '';
+        if (caminho == 'sem_permissao') {
+          return 'Preciso de permissão para usar a câmera. Toque em Permitir e peça de novo.';
+        }
+        if (caminho == null) return 'Não consegui usar a câmera agora.';
+        final foto = await File(caminho).readAsBytes();
+        ultimaFoto = foto;
+        notifyListeners();
+        final visto = await JarvisService.instance.olhar(c.textoOriginal, foto);
+        return visto ??
+            'Tirei a foto, mas para enxergar eu preciso da chave do Gemini nas Configurações.';
       case TipoComando.sair:
         // Dá tempo de falar a despedida antes de apagar a tela.
         Timer(const Duration(seconds: 5), () => ausente.value = true);

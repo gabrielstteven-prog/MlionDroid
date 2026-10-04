@@ -87,6 +87,17 @@ class Sistema {
     } catch (_) {}
   }
 
+  /// Tira uma foto com a câmera da frente ("olha o que eu tenho na mão").
+  /// Devolve o caminho do JPEG, "sem_permissao" ou null se falhar.
+  static Future<String?> tirarFoto() async {
+    try {
+      return await _canal.invokeMethod<String>('tirarFoto');
+    } catch (e) {
+      debugPrint('Sistema.tirarFoto: $e');
+      return null;
+    }
+  }
+
   /// Para de vigiar os sensores do descanso.
   static Future<void> pararDescanso() async {
     try {

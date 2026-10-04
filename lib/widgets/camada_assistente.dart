@@ -56,7 +56,23 @@ class _Balao extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  OrbeJarvis(estado: a.estado, tamanho: r.sp(240)),
+                  // Com foto ("olha o que eu tenho na mão"): orbe menor e a
+                  // foto ao lado, para a pessoa ver o que o Jarvis viu.
+                  if (a.ultimaFoto != null)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        OrbeJarvis(estado: a.estado, tamanho: r.sp(160)),
+                        SizedBox(width: r.sp(28)),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(r.sp(20)),
+                          child: Image.memory(a.ultimaFoto!,
+                              height: r.sp(260), fit: BoxFit.contain, gaplessPlayback: true),
+                        ),
+                      ],
+                    )
+                  else
+                    OrbeJarvis(estado: a.estado, tamanho: r.sp(240)),
                   SizedBox(height: r.sp(18)),
                   Text(nome,
                       style: t.legenda(cor: _corDoEstado(a.estado)).copyWith(

@@ -38,10 +38,12 @@ class IaService {
 
   /// Responde [pergunta] seguindo as instruções de [sistema]. Devolve null
   /// se nenhum provedor estiver configurado ou todos falharem.
-  Future<String?> responder({required String sistema, required String pergunta}) async {
+  /// Com [imagem] (JPEG), só o Gemini responde: ele enxerga a foto.
+  Future<String?> responder(
+      {required String sistema, required String pergunta, List<int>? imagem}) async {
     if (_chaveGemini.isNotEmpty) {
       try {
-        final r = await _gemini(sistema, pergunta);
+        final r = await _gemini(sistema, pergunta, imagem);
         if (r != null && r.isNotEmpty) {
           ultimoProvedor = 'Gemini';
           return r;
@@ -50,6 +52,7 @@ class IaService {
         debugPrint('IA Gemini: $e');
       }
     }
+    if (imagem != null) return null; // o Groq não enxerga imagens
     if (_chaveGroq.isNotEmpty) {
       try {
         final r = await _groq(sistema, pergunta);
@@ -69,18 +72,18 @@ class IaService {
   /// de novo sem ele.
   bool _aceitaNivelDeRaciocinio = true;
 
-  Future<String?> _gemini(String sistema, String pergunta) async {
+  Future<String?> _gemini(String sistema, String pergunta, List<int>? imagem) async {
     if (_aceitaNivelDeRaciocinio) {
       try {
-        return await _chamarGemini(sistema, pergunta, raciocinioLeve: true);
+        return await _chamarGemini(sistema, pergunta, imagem, raciocinioLeve: true);
       } on _Recusado {
         _aceitaNivelDeRaciocinio = false;
       }
     }
-    return _chamarGemini(sistema, pergunta, raciocinioLeve: false);
+    return _chamarGemini(sistema, pergunta, imagem, raciocinioLeve: false);
   }
 
-  Future<String?> _chamarGemini(String sistema, String pergunta,
+  Future<String?> _chamarGemini(String sistema, String pergunta, List<int>? imagem,
       {required bool raciocinioLeve}) async {
     final res = await http
         .post(
@@ -97,7 +100,12 @@ class IaService {
               {
                 'role': 'user',
                 'parts': [
-                  {'text': pergunta}
+                  {'text': pergunta},
+                  // Foto da câmera ("olha o que eu tenho na mão").
+                  if (imagem != null)
+                    {
+                      'inlineData': {'mimeType': 'image/jpeg', 'data': base64Encode(imagem)}
+                    },
                 ]
               }
             ],

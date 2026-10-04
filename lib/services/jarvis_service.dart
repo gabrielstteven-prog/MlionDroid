@@ -185,6 +185,19 @@ $contexto''';
     return IaService.instance.responder(sistema: sistema(ctx), pergunta: pergunta);
   }
 
+  /// "Olha o que eu tenho na mão": a IA recebe a foto da câmera da frente e
+  /// responde no tom da personalidade. null = sem Gemini (só ele enxerga).
+  Future<String?> olhar(String pergunta, List<int> foto) async {
+    if (!IaService.instance.configurado) return null;
+    return IaService.instance.responder(
+      sistema: sistema('(sem dados extras: responda sobre a foto)'),
+      pergunta: 'O usuário mostrou algo para a câmera do tablet (a foto está anexada) e '
+          'disse: "$pergunta". Diga o que ele está mostrando ou segurando e responda ao '
+          'pedido. Se a imagem estiver escura ou borrada, diga isso. Seja breve.',
+      imagem: foto,
+    );
+  }
+
   /// Briefing da manhã: um texto de 40 a 60 segundos escrito pela IA com os
   /// dados do dia. Sem IA, devolve null e o Bom Dia usa o resumo pronto.
   Future<String?> briefing(String saudacao) async {
