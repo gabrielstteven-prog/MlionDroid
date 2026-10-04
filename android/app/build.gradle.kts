@@ -73,3 +73,9 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Palavra de ativação "Jarvis" (Picovoice Porcupine): roda no próprio
+    // tablet; a chave gratuita (uso pessoal) é colada nas Configurações.
+    implementation("ai.picovoice:porcupine-android:4.0.2")
+}

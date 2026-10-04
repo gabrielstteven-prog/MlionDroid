@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../config_manager.dart';
+import '../services/assistente_service.dart';
 import '../services/ia_service.dart';
 import '../services/jarvis_service.dart';
 import '../services/voz_service.dart';
@@ -29,6 +30,7 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
   bool _testandoIa = false;
   bool _testandoVoz = false;
   int _uso = 0;
+  String _statusPalavra = '';
 
   @override
   void initState() {
@@ -102,6 +104,59 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
                 _testandoIa ? null : _testarIa),
             const SizedBox(width: 14),
             Expanded(child: Text(_statusIa, style: _txt(14, cor: Colors.white))),
+          ]),
+        ]),
+        const SizedBox(height: 28),
+        _titulo('🗣️ Chamar pelo nome ("Jarvis")'),
+        const SizedBox(height: 14),
+        _card([
+          Text(
+            'Diga "Jarvis" de qualquer lugar da sala e ele começa a ouvir, sem tocar '
+            'no microfone. A escuta da palavra roda dentro do tablet (o áudio não sai '
+            'dele); só depois do "Jarvis" a frase vai para o reconhecimento de voz.',
+            style: _txt(14),
+          ),
+          const SizedBox(height: 16),
+          _campo('picovoice_chave', 'Chave da Picovoice (gratuita, uso pessoal)',
+              'console.picovoice.ai → AccessKey', Icons.key_rounded,
+              secreto: true),
+          Row(children: [
+            Expanded(child: Text('Ouvir a palavra "Jarvis"', style: _txt(15, peso: FontWeight.w600))),
+            Switch(
+              value: _cfg.getBool('assistente', 'palavra_ativacao', true),
+              onChanged: (v) => setState(() => _cfg.set('assistente', 'palavra_ativacao', v)),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          Text('Sensibilidade', style: _txt(15, peso: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Wrap(spacing: 10, children: [
+            for (final (v, rotulo) in const [
+              (0.4, 'Baixa (menos alarmes falsos)'),
+              (0.6, 'Média'),
+              (0.8, 'Alta (ouve de mais longe)'),
+            ])
+              ChoiceChip(
+                label: Text(rotulo),
+                selected: (_cfg.getDouble('assistente', 'palavra_sensibilidade', 0.6) - v).abs() < 0.01,
+                onSelected: (_) => setState(() => _cfg.set('assistente', 'palavra_sensibilidade', v)),
+              ),
+          ]),
+          const SizedBox(height: 14),
+          Row(children: [
+            _botao('Aplicar', Icons.hearing_rounded, () async {
+              await _cfg.salvar();
+              await AssistenteService.instance.sincronizarPalavra(forcar: true);
+              if (!mounted) return;
+              final s = AssistenteService.instance.statusPalavra.value;
+              setState(() => _statusPalavra = s.isEmpty
+                  ? (_cfg.getBool('assistente', 'palavra_ativacao', true)
+                      ? 'Pronto! Diga "Jarvis" para testar.'
+                      : 'Escuta da palavra desligada.')
+                  : s);
+            }),
+            const SizedBox(width: 14),
+            Expanded(child: Text(_statusPalavra, style: _txt(14, cor: Colors.white))),
           ]),
         ]),
         const SizedBox(height: 28),

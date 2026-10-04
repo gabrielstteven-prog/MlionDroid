@@ -1524,6 +1524,14 @@ class _TelaConfigState extends State<TelaConfig>
                     ),
                   ]),
           ),
+          const SizedBox(height: 8),
+          _toggleConfig(
+            titulo: 'Conferir se tem alguém antes de apagar',
+            subtitulo: 'No começo do horário a câmera observa: com movimento (ex.: home office) a tela fica acesa',
+            categoria: 'noite',
+            chave: 'conferir_presenca',
+            valorPadrao: true,
+          ),
           const SizedBox(height: 12),
           Row(children: [
             Expanded(

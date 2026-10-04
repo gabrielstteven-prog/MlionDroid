@@ -75,6 +75,15 @@ class MainActivity : FlutterActivity() {
         canalVoz = MethodChannel(messenger, CANAL_VOZ)
         canalVoz!!.setMethodCallHandler { call, result ->
             when (call.method) {
+                "ligarPalavra" -> {
+                    val chave = call.argument<String>("chave") ?: ""
+                    val sens = (call.argument<Double>("sensibilidade") ?: 0.6).toFloat()
+                    result.success(ligarPalavra(chave, sens))
+                }
+                "desligarPalavra" -> {
+                    pararPalavra()
+                    result.success(null)
+                }
                 "startListening" -> {
                     val language = call.argument<String>("language") ?: "pt-BR"
                     val prompt = call.argument<String>("prompt") ?: "Fale agora..."
@@ -178,6 +187,15 @@ class MainActivity : FlutterActivity() {
                     requestPermissions(arrayOf(Manifest.permission.CAMERA), 78)
                     result.success(null)
                 }
+                "observarPresenca" -> {
+                    // Antes de apagar: a câmera confere se há alguém em casa.
+                    if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                        DescansoService.iniciar(this, false, false, true, soPresenca = true)
+                        result.success(true)
+                    } else {
+                        result.success(false)
+                    }
+                }
                 "pararDescanso" -> {
                     DescansoService.parar(this)
                     result.success(null)
@@ -194,6 +212,54 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    // ── Palavra de ativação "Jarvis" (Porcupine, roda no tablet) ─────────────
+    private var porcupine: ai.picovoice.porcupine.PorcupineManager? = null
+
+    /** null = ligou; senão, o motivo da falha (ex.: chave inválida). */
+    private fun ligarPalavra(chave: String, sensibilidade: Float): String? {
+        pararPalavra()
+        if (chave.isBlank()) return "sem_chave"
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), PEDIDO_MICROFONE)
+            return "sem_permissao"
+        }
+        return try {
+            val p = ai.picovoice.porcupine.PorcupineManager.Builder()
+                .setAccessKey(chave)
+                .setKeyword(ai.picovoice.porcupine.Porcupine.BuiltInKeyword.JARVIS)
+                .setSensitivity(sensibilidade.coerceIn(0.1f, 0.95f))
+                .setErrorCallback { e -> android.util.Log.w("MlionJarvis", "porcupine: ${e.message}") }
+                .build(applicationContext) { _ -> runOnUiThread { aoOuvirPalavra() } }
+            p.start()
+            porcupine = p
+            android.util.Log.i("MlionJarvis", "ouvindo a palavra Jarvis")
+            null
+        } catch (e: Exception) {
+            android.util.Log.w("MlionJarvis", "não ligou: ${e.message}")
+            e.message ?: "erro"
+        }
+    }
+
+    private fun pararPalavra() {
+        val p = porcupine ?: return
+        porcupine = null
+        try { p.stop() } catch (_: Exception) {}
+        try { p.delete() } catch (_: Exception) {}
+    }
+
+    private fun aoOuvirPalavra() {
+        android.util.Log.i("MlionJarvis", "ouvi: Jarvis")
+        // O microfone vai para o reconhecimento da frase: solta o Porcupine.
+        pararPalavra()
+        if (cortina != null) {
+            // Tela em descanso: acende antes de ouvir.
+            DescansoService.parar(this)
+            acordarTela()
+            canalSistema?.invokeMethod("acordouPorSensor", "toque")
+        }
+        canalVoz?.invokeMethod("palavraAtivacao", null)
     }
 
     // ── Escuta dentro do app (SpeechRecognizer, sem a janela do Google) ──────
@@ -455,6 +521,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        pararPalavra()
         tts?.shutdown()
         DescansoService.aoAcordar = null
         reconhecedor?.destroy()

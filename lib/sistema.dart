@@ -98,6 +98,16 @@ class Sistema {
     }
   }
 
+  /// Liga a câmera só para conferir se há alguém (tela acesa). false = sem
+  /// permissão da câmera.
+  static Future<bool> observarPresenca() async {
+    try {
+      return await _canal.invokeMethod<bool>('observarPresenca') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Para de vigiar os sensores do descanso.
   static Future<void> pararDescanso() async {
     try {
@@ -168,6 +178,26 @@ class Sistema {
   /// Volume da voz agora, de 0 a 1 (faz o orbe reagir à fala).
   static final ValueNotifier<double> volumeVoz = ValueNotifier(0);
 
+  /// Ouviu "Jarvis" (conta a cada vez).
+  static final ValueNotifier<int> palavraOuvida = ValueNotifier(0);
+
+  /// Liga a escuta da palavra "Jarvis". null = ligou; senão, o motivo.
+  static Future<String?> ligarPalavra(String chave, double sensibilidade) async {
+    _prepararOuvinte();
+    try {
+      return await _canalVoz.invokeMethod<String>(
+          'ligarPalavra', {'chave': chave, 'sensibilidade': sensibilidade});
+    } catch (e) {
+      return '$e';
+    }
+  }
+
+  static Future<void> desligarPalavra() async {
+    try {
+      await _canalVoz.invokeMethod('desligarPalavra');
+    } catch (_) {}
+  }
+
   static bool _ouvintePronto = false;
   static void _prepararOuvinte() {
     if (_ouvintePronto) return;
@@ -182,6 +212,8 @@ class Sistema {
           volumeVoz.value = ((db + 2) / 12).clamp(0.0, 1.0);
         case 'erro':
           debugPrint('Reconhecimento de voz: erro ${call.arguments}');
+        case 'palavraAtivacao':
+          palavraOuvida.value++;
       }
     });
   }

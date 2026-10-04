@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:googleapis/tasks/v1.dart' as tasks;
 
+import '../config_manager.dart';
 import '../sistema.dart';
 import '../util.dart';
 import 'football_service.dart';
@@ -216,7 +217,54 @@ class Temporizador {
 enum EstadoAssistente { parado, ouvindo, pensando, respondendo }
 
 class AssistenteService extends ChangeNotifier {
-  AssistenteService._();
+  AssistenteService._() {
+    // A palavra "Jarvis" só é ouvida com o assistente parado: enquanto ele
+    // ouve a frase ou fala, o microfone fica com ele (e ele não se chama
+    // sozinho ao dizer o próprio nome).
+    addListener(_sincronizarPalavra);
+    Sistema.palavraOuvida.addListener(() {
+      if (estado == EstadoAssistente.parado) ouvir();
+    });
+  }
+
+  final _cfg = ConfigManager();
+  bool _palavraLigada = false;
+
+  /// Motivo de a palavra "Jarvis" não estar funcionando ("" = funcionando).
+  final ValueNotifier<String> statusPalavra = ValueNotifier('');
+
+  bool get _palavraConfigurada =>
+      _cfg.getBool('assistente', 'palavra_ativacao', true) &&
+      _cfg.getString('assistente', 'picovoice_chave', '').trim().isNotEmpty;
+
+  /// Liga/desliga a escuta da palavra conforme o estado e as Configurações.
+  /// [forcar] religa mesmo se já estava ligada (chave ou sensibilidade mudou).
+  Future<void> sincronizarPalavra({bool forcar = false}) async {
+    final deve = _palavraConfigurada && estado == EstadoAssistente.parado;
+    if (forcar && _palavraLigada) {
+      _palavraLigada = false;
+      await Sistema.desligarPalavra();
+    }
+    if (deve == _palavraLigada) return;
+    _palavraLigada = deve;
+    if (!deve) {
+      await Sistema.desligarPalavra();
+      return;
+    }
+    final erro = await Sistema.ligarPalavra(
+      _cfg.getString('assistente', 'picovoice_chave', '').trim(),
+      _cfg.getDouble('assistente', 'palavra_sensibilidade', 0.6),
+    );
+    if (erro != null) _palavraLigada = false;
+    statusPalavra.value = switch (erro) {
+      null => '',
+      'sem_chave' => 'Falta a chave da Picovoice.',
+      'sem_permissao' => 'Falta a permissão do microfone. Aceite e tente de novo.',
+      _ => 'A Picovoice recusou: $erro',
+    };
+  }
+
+  void _sincronizarPalavra() => sincronizarPalavra();
   static final AssistenteService instance = AssistenteService._();
 
   EstadoAssistente estado = EstadoAssistente.parado;

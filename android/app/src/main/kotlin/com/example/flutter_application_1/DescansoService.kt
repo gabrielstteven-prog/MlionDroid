@@ -45,6 +45,7 @@ class DescansoService : Service(), SensorEventListener {
         const val EXTRA_LUZ = "luz"
         const val EXTRA_PROXIMIDADE = "proximidade"
         const val EXTRA_CAMERA = "camera"
+        const val EXTRA_SO_PRESENCA = "so_presenca"
         private const val CANAL = "descanso"
         private const val ID = 4242
 
@@ -54,11 +55,14 @@ class DescansoService : Service(), SensorEventListener {
         /** Depois de acender: a câmera ainda vê alguém na frente (a cada ~10 s). */
         var aoPresenca: (() -> Unit)? = null
 
-        fun iniciar(ctx: Context, luz: Boolean, proximidade: Boolean, camera: Boolean) {
+        /** [soPresenca]: tela acesa, só observa se há alguém (antes de apagar). */
+        fun iniciar(ctx: Context, luz: Boolean, proximidade: Boolean, camera: Boolean,
+                    soPresenca: Boolean = false) {
             val i = Intent(ctx, DescansoService::class.java)
                 .putExtra(EXTRA_LUZ, luz)
                 .putExtra(EXTRA_PROXIMIDADE, proximidade)
                 .putExtra(EXTRA_CAMERA, camera)
+                .putExtra(EXTRA_SO_PRESENCA, soPresenca)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(i)
             else ctx.startService(i)
         }
@@ -92,8 +96,10 @@ class DescansoService : Service(), SensorEventListener {
         sensores?.unregisterListener(this)
         sensores = sm
         luzBase = -1f
-        acordou = false
-        presenca = false
+        val soPresenca = intent?.getBooleanExtra(EXTRA_SO_PRESENCA, false) ?: false
+        acordou = soPresenca // já "acordado": não tenta acender a tela
+        presenca = soPresenca
+        if (soPresenca) return START_STICKY // sem sensores de luz/proximidade
         // Prefere a versão "wake-up" do sensor: ela entrega a leitura mesmo
         // com o processador do tablet dormindo.
         if (usarLuz) {

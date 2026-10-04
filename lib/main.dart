@@ -169,6 +169,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     Sistema.presenca.addListener(_presenca);
     AssistenteService.instance.ausente.addListener(_modoAusente);
     Sistema.iniciarEventos();
+    AssistenteService.instance.sincronizarPalavra(); // "Jarvis" sem tocar
   }
 
   @override
@@ -199,9 +200,24 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
           config.getInt('ausente', 'hora_inicio', 8),
           config.getInt('ausente', 'hora_fim', 18),
         );
+    final emDescanso = noite || ausenteAgenda || _ausenteManual;
+    // Começou o horário de descanso (noite ou ausência agendada): antes de
+    // apagar, a câmera confere se tem alguém em casa. Com movimento (dia de
+    // home office, acordado à meia-noite) a tela fica acesa; sem ninguém
+    // pelo tempo configurado, apaga. "Estou saindo" apaga na hora.
+    if (emDescanso && !_estavaEmDescanso) {
+      _estavaEmDescanso = true;
+      if (!_ausenteManual &&
+          config.getBool('noite', 'conferir_presenca', true) &&
+          config.getBool('noite', 'acordar_com_camera', true)) {
+        _noiteDispensadaAte = agora.add(_tempoAcordadoPorSensor);
+        Sistema.observarPresenca();
+      }
+    } else if (!emDescanso) {
+      _estavaEmDescanso = false;
+    }
     final dispensada =
         _noiteDispensadaAte != null && agora.isBefore(_noiteDispensadaAte!);
-    final emDescanso = noite || ausenteAgenda || _ausenteManual;
     final deveFicar = emDescanso && !dispensada && !_showConfig;
     // Ausente (agenda ou "estou saindo") sempre apaga; a noite só apaga se
     // a opção estiver ligada (senão mostra o relógio escuro).
@@ -245,6 +261,9 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
       if (!emDescanso) Sistema.pararDescanso();
     }
   }
+
+  /// Já estava no horário de descanso na última avaliação (detecta a entrada).
+  bool _estavaEmDescanso = false;
 
   /// "Jarvis, estou saindo": tela em descanso até alguém chegar.
   bool _ausenteManual = false;
