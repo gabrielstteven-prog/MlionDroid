@@ -554,10 +554,17 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            AvatarJarvis(
-              estado: _falando ? EstadoAssistente.respondendo : EstadoAssistente.parado,
-              emocao: Emocao.feliz,
-              tamanho: r.sp(64),
+            // Tocar no rosto do Jarvis: ele lê o briefing de novo (ou para).
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: (_briefing != null || _resumo.isNotEmpty)
+                  ? (_falando ? _pararFala : _falarDeNovo)
+                  : null,
+              child: AvatarJarvis(
+                estado: _falando ? EstadoAssistente.respondendo : EstadoAssistente.parado,
+                emocao: Emocao.feliz,
+                tamanho: r.sp(64),
+              ),
             ),
             SizedBox(width: r.sp(14)),
             Text(nomeAssistente,
