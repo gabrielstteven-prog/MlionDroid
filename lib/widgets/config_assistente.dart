@@ -7,6 +7,7 @@ import '../services/assistente_service.dart';
 import '../services/ia_service.dart';
 import '../services/jarvis_service.dart';
 import '../services/telegram_service.dart';
+import '../services/voz_jarvis_service.dart';
 import '../services/voz_service.dart';
 
 /// Seção "Assistente (Jarvis)" das Configurações: chaves de IA e de voz,
@@ -91,6 +92,128 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
     });
   }
 
+  // ── Voz do Jarvis (Qwen3, voz clonada, gravada antes) ───────────────────
+  bool _baixandoJarvis = false;
+  String _statusJarvis = '';
+
+  Future<void> _baixarJarvis() async {
+    setState(() {
+      _baixandoJarvis = true;
+      _statusJarvis = '';
+    });
+    final ok = await VozJarvis.instance.baixar();
+    if (ok) {
+      _cfg.set('assistente', 'motor_voz', 'jarvis');
+      await _cfg.salvar(); // já fica valendo, sem precisar tocar em Salvar
+    }
+    if (!mounted) return;
+    setState(() {
+      _baixandoJarvis = false;
+      _statusJarvis = ok
+          ? 'Pronto! O Jarvis está gravando as frases dele agora (alguns minutos). '
+              'O Bom Dia sai na voz dele a partir de amanhã.'
+          : 'O download parou (internet?). Toque de novo: ele continua de onde parou.';
+    });
+  }
+
+  Future<void> _ouvirJarvis() async {
+    final audios = await VozJarvis.instance.audios(VozJarvis.frasesFixas.first);
+    if (audios == null) {
+      setState(() => _statusJarvis = 'Ainda gravando a primeira frase. Tente em alguns minutos.');
+      return;
+    }
+    for (final a in audios) {
+      await Sistema.tocarAudio(a.path);
+    }
+  }
+
+  Widget _secaoVozJarvis() {
+    final jarvis = VozJarvis.instance;
+    final rapida = _cfg.getString('assistente', 'voz_rapida', 'android');
+    return _card([
+      Text(
+        'A voz do Jarvis: natural, com risada e emoção, gerada no próprio tablet. '
+        'Ela é pesada, então o Jarvis grava ANTES: o Bom Dia às 4h, o resumo da noite '
+        'uma hora antes e as frases que ele mais fala. O que ainda não foi gravado sai '
+        'na voz rápida, sem esperar.',
+        style: _txt(14),
+      ),
+      const SizedBox(height: 14),
+      if (!jarvis.suportado)
+        Text('Este aparelho não roda a voz do Jarvis (precisa de ARM 64 bits).',
+            style: _txt(14, cor: Colors.orangeAccent))
+      else if (_baixandoJarvis)
+        ValueListenableBuilder<(String, double)?>(
+          valueListenable: Sistema.vozProgresso,
+          builder: (_, p, __) {
+            final v = p != null && p.$1 == 'qwen3' ? p.$2 : null;
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              LinearProgressIndicator(value: v, minHeight: 8),
+              const SizedBox(height: 6),
+              Text('Baixando a voz do Jarvis... ${v == null ? '' : '${(v * 100).round()}%'} '
+                  '(2,4 GB — deixe no Wi-Fi)', style: _txt(13)),
+            ]);
+          },
+        )
+      else if (!jarvis.disponivel)
+        Row(children: [
+          _botao('Baixar a voz do Jarvis', Icons.download_rounded, _baixarJarvis),
+          const SizedBox(width: 14),
+          Expanded(child: Text('2,4 GB, uma vez só. Use o Wi-Fi.', style: _txt(13))),
+        ])
+      else
+        Row(children: [
+          _botao('Ouvir', Icons.play_arrow_rounded, _ouvirJarvis),
+          const SizedBox(width: 14),
+          Expanded(
+            child: ValueListenableBuilder<int>(
+              valueListenable: jarvis.naFila,
+              builder: (_, n, __) => Text(
+                  n == 0 ? 'Voz instalada. Nada na fila para gravar.' : 'Gravando: $n frases na fila.',
+                  style: _txt(14, cor: Colors.white)),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Apagar a voz do Jarvis do tablet',
+            icon: const Icon(Icons.delete_outline_rounded, color: Colors.white38),
+            onPressed: () async {
+              await jarvis.apagar();
+              if (_cfg.getString('assistente', 'motor_voz', 'auto') == 'jarvis') {
+                _cfg.set('assistente', 'motor_voz', 'auto');
+              }
+              setState(() {});
+            },
+          ),
+        ]),
+      if (_statusJarvis.isNotEmpty) ...[
+        const SizedBox(height: 10),
+        Text(_statusJarvis, style: _txt(14, cor: Colors.white)),
+      ],
+      const SizedBox(height: 16),
+      Text('Voz rápida (enquanto a frase não foi gravada)',
+          style: _txt(15, peso: FontWeight.w600)),
+      const SizedBox(height: 8),
+      Wrap(spacing: 10, runSpacing: 10, children: [
+        for (final (id, rotulo) in const [
+          ('android', 'Voz do Android'),
+          ('supertonic', 'Supertonic 3'),
+          ('piper_faber', 'Piper Faber'),
+          ('piper_miro', 'Piper Miro'),
+        ])
+          ChoiceChip(
+            label: Text(rotulo),
+            selected: rapida == id,
+            onSelected: id == 'android' || _instaladas[id] == true
+                ? (_) => setState(() => _cfg.set('assistente', 'voz_rapida', id))
+                : null,
+          ),
+      ]),
+      const SizedBox(height: 6),
+      Text('As vozes do aparelho precisam ser baixadas logo abaixo.',
+          style: _txt(12.5, cor: Colors.white38)),
+    ]);
+  }
+
   Widget _secaoMotorVoz() {
     final motor = _cfg.getString('assistente', 'motor_voz', 'auto');
     return _card([
@@ -103,8 +226,9 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
       Text('Motor de voz', style: _txt(15, peso: FontWeight.w600)),
       const SizedBox(height: 8),
       Wrap(spacing: 10, runSpacing: 10, children: [
-        for (final (id, rotulo) in const [
+        for (final (id, rotulo) in [
           ('auto', 'Automático'),
+          if (VozJarvis.instance.disponivel) ('jarvis', 'Voz do Jarvis (gravada)'),
           ('supertonic', 'Supertonic 3 (aparelho)'),
           ('piper_faber', 'Piper Faber (aparelho)'),
           ('piper_miro', 'Piper Miro (aparelho)'),
@@ -375,6 +499,8 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
         ]),
         const SizedBox(height: 28),
         _titulo('🔊 Voz do Jarvis'),
+        const SizedBox(height: 14),
+        _secaoVozJarvis(),
         const SizedBox(height: 14),
         _secaoMotorVoz(),
         const SizedBox(height: 28),

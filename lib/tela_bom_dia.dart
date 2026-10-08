@@ -16,6 +16,7 @@ import 'services/assistente_service.dart';
 import 'services/jarvis_service.dart';
 import 'services/news_service.dart';
 import 'services/resumo_service.dart';
+import 'services/voz_jarvis_service.dart';
 import 'services/voz_service.dart';
 import 'services/weather_service.dart';
 import 'util.dart';
@@ -185,6 +186,12 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
 
   Future<void> _carregarBriefing() async {
     final hoje = DateTime.now();
+    // Preparado às 4h com a voz do Jarvis já gravada: usa o mesmo texto.
+    final preparado = await VozJarvis.instance.preparado(VozJarvis.chaveBriefing(hoje));
+    if (preparado != null && preparado.isNotEmpty) {
+      _briefing = preparado;
+      return;
+    }
     final chave = 'briefing_${hoje.year}_${hoje.month}_${hoje.day}_${hoje.hour ~/ 3}';
     final salvo = await CacheManager.instance.obterEntrada<String>(chave);
     if (salvo != null) {

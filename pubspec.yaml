@@ -1,7 +1,7 @@
 name: mlion_droid
 description: MlionDroid Center — painel inteligente para tablet.
 
-version: 1.0.28+29
+version: 1.0.29+30
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -52,3 +52,4 @@ flutter:
     - assets/logos/
     - assets/competicoes/
     - assets/sobre/
+    - assets/vozes/

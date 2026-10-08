@@ -8,6 +8,7 @@ import 'cache_manager.dart';
 import 'config_manager.dart';
 import 'design/tema.dart';
 import 'responsive.dart';
+import 'services/compras.dart';
 import 'services/google_auth_service.dart';
 import 'sistema.dart';
 
@@ -215,13 +216,12 @@ class _TelaComprasState extends State<TelaCompras>
     _iniciarSaida(_duracaoSeg);
   }
 
-  /// "arroz, feijão e leite" → [Arroz, Feijão, Leite]
+  /// "arroz, 3 sabonetes e leite" → [Arroz, Sabonete (3), Leite]
   static List<String> _separarItens(String falado) {
     return falado
         .split(RegExp(r',| e |;'))
-        .map((s) => s.trim())
+        .map((s) => lerItemFalado(s).titulo)
         .where((s) => s.isNotEmpty)
-        .map((s) => s[0].toUpperCase() + s.substring(1))
         .toList();
   }
 
@@ -338,6 +338,7 @@ class _TelaComprasState extends State<TelaCompras>
   Widget _buildItem(ItemCompra item, R r) {
     final t = Tipo(r);
     final pendente = _pendentes.containsKey(item.id);
+    final lido = itemDoTitulo(item.titulo); // "Sabonete (3)" → Sabonete ×3
     return GestureDetector(
       onTap: () => _marcar(item),
       child: AnimatedContainer(
@@ -355,7 +356,7 @@ class _TelaComprasState extends State<TelaCompras>
             SizedBox(width: r.sp(16)),
             Expanded(
               child: Text(
-                item.titulo,
+                lido.nome,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: t.subtitulo(cor: pendente ? Cores.textoApagado : Cores.texto).copyWith(
@@ -363,6 +364,17 @@ class _TelaComprasState extends State<TelaCompras>
                     decorationColor: Cores.textoApagado),
               ),
             ),
+            if (lido.quantidade != null && !pendente)
+              Container(
+                margin: EdgeInsets.only(left: r.sp(12)),
+                padding: EdgeInsets.symmetric(horizontal: r.sp(14), vertical: r.sp(6)),
+                decoration: BoxDecoration(
+                  color: _verde.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(r.sp(40)),
+                ),
+                child: Text('×${lido.quantidade}',
+                    style: t.subtitulo(cor: _verde).copyWith(fontWeight: FontWeight.w800)),
+              ),
             if (pendente)
               Row(children: [
                 Icon(Icons.undo_rounded, color: Cores.aviso, size: r.icon(22)),

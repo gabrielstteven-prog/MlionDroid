@@ -292,14 +292,17 @@ $contexto''';
 
   /// Briefing da manhã: um texto de 40 a 60 segundos escrito pela IA com os
   /// dados do dia. Sem IA, devolve null e o Bom Dia usa o resumo pronto.
-  Future<String?> briefing(String saudacao) async {
+  /// [antecipado]: escrito às 4h para a voz do Jarvis gravar antes — não diz
+  /// a hora (seria "quatro da manhã" quando a pessoa ouvir às 7h).
+  Future<String?> briefing(String saudacao, {bool antecipado = false}) async {
     if (!IaService.instance.configurado) return null;
     final ctx = await contexto();
     final nome = nomeUsuario;
     return _semEmocao(await IaService.instance.responder(
       sistema: sistema(ctx),
       pergunta: 'Faça o briefing da manhã, rápido e leve, nesta ordem: '
-          '1) "$saudacao${nome.isEmpty ? '' : ', $nome'}", o dia e a hora de agora; '
+          '1) "$saudacao${nome.isEmpty ? '' : ', $nome'}", '
+          '${antecipado ? 'o dia da semana e a data (NÃO diga a hora)' : 'o dia e a hora de agora'}; '
           '2) a agenda de hoje (compromissos, tarefas, aniversários) ou que o dia está livre, '
           'e as CONTAS A PAGAR dos próximos dias com quantos dias faltam (ex.: "o condomínio vence em 3 dias"); '
           '3) o clima, se precisa de guarda-chuva e alertas da Defesa Civil se houver; '

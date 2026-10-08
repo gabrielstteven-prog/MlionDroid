@@ -218,6 +218,36 @@ class MainActivity : FlutterActivity() {
                         call.argument<Int>("qualidade") ?: 5,
                     ) { ok -> result.success(ok) }
                 }
+                // ── Voz do Jarvis (Qwen3-TTS no aparelho, gerada antes) ─────────
+                "vozQwenEstado" -> result.success(
+                    mapOf(
+                        "suportado" to VozQwen.suportado(this),
+                        "instalado" to VozQwen.instalado(this),
+                        "rodando" to VozQwen.rodando(),
+                        "porta" to VozQwen.PORTA,
+                    )
+                )
+                "vozQwenBaixar" -> Thread {
+                    val ok = VozQwen.baixar(this) { p ->
+                        runOnUiThread {
+                            canalSistema?.invokeMethod("vozProgresso", mapOf("id" to "qwen3", "p" to p))
+                        }
+                    }
+                    runOnUiThread { result.success(ok) }
+                }.start()
+                "vozQwenApagar" -> {
+                    VozQwen.apagar(this)
+                    result.success(null)
+                }
+                "vozQwenIniciar" -> result.success(
+                    VozQwen.iniciar(
+                        this, call.argument<String>("voz") ?: "", call.argument<Int>("nucleos") ?: 8
+                    )
+                )
+                "vozQwenParar" -> {
+                    VozQwen.parar()
+                    result.success(null)
+                }
                 "gravarAudio" -> {
                     // "/audio" do Telegram: grava N segundos do microfone em AAC (.m4a).
                     val seg = (call.argument<Int>("segundos") ?: 15).coerceIn(3, 60)
@@ -728,6 +758,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        VozQwen.parar()
         ouvido?.liberar()
         ouvido = null
         tts?.shutdown()

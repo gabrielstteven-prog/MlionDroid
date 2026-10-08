@@ -170,6 +170,52 @@ class Sistema {
     }
   }
 
+  // ── Voz do Jarvis (Qwen3-TTS no aparelho, gerada antes) ─────────────────
+
+  /// {suportado, instalado, rodando, porta}
+  static Future<Map<String, dynamic>> vozQwenEstado() async {
+    try {
+      return Map<String, dynamic>.from(
+          await _canal.invokeMethod<Map>('vozQwenEstado') ?? const {});
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Baixa o modelo (~2,4 GB, uma vez; continua de onde parou).
+  static Future<bool> vozQwenBaixar() async {
+    _prepararEventos();
+    try {
+      return await _canal.invokeMethod<bool>('vozQwenBaixar') ?? false;
+    } catch (e) {
+      debugPrint('Sistema.vozQwenBaixar: $e');
+      return false;
+    }
+  }
+
+  static Future<void> vozQwenApagar() async {
+    try {
+      await _canal.invokeMethod('vozQwenApagar');
+    } catch (_) {}
+  }
+
+  /// Liga o servidor de voz (só aceita conexões do próprio aparelho).
+  static Future<bool> vozQwenIniciar(String voz, {int nucleos = 8}) async {
+    try {
+      return await _canal.invokeMethod<bool>('vozQwenIniciar', {'voz': voz, 'nucleos': nucleos}) ??
+          false;
+    } catch (e) {
+      debugPrint('Sistema.vozQwenIniciar: $e');
+      return false;
+    }
+  }
+
+  static Future<void> vozQwenParar() async {
+    try {
+      await _canal.invokeMethod('vozQwenParar');
+    } catch (_) {}
+  }
+
   /// Para de vigiar os sensores do descanso.
   static Future<void> pararDescanso() async {
     try {

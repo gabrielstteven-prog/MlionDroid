@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../cache_manager.dart';
 import '../config_manager.dart';
 import '../sistema.dart';
+import 'voz_jarvis_service.dart';
 
 class VozPremium {
   final String id;
@@ -77,6 +78,7 @@ class VozService {
   //  auto        → ElevenLabs se tiver chave, senão a do Android
   //  elevenlabs  → ElevenLabs (paga com cota grátis)
   //  supertonic / piper_faber / piper_miro → voz no aparelho (grátis, sem conta)
+  //  jarvis      → voz do Jarvis (Qwen3, voz clonada) gravada antes + voz rápida
   //  android     → voz do Android
   static const motoresLocais = {'supertonic', 'piper_faber', 'piper_miro'};
 
@@ -131,6 +133,19 @@ class VozService {
     final t = texto.trim();
     if (t.isEmpty) return;
     final m = motor;
+    if (m == 'jarvis') {
+      // Voz do Jarvis gravada antes; o que ainda não foi gravado sai na voz
+      // rápida agora (sem esperar) e as frases curtas entram na fila.
+      final gravados = await VozJarvis.instance.audios(t);
+      if (gravados != null && await _tocarEmSequencia(gravados)) {
+        debugPrint('Voz: Jarvis (gravada)');
+        ultimoErro = '';
+        return;
+      }
+      VozJarvis.instance.aprender(t);
+      await _falarRapida(t);
+      return;
+    }
     // Voz no aparelho: grátis, então vale para tudo (até avisos curtos).
     if (motoresLocais.contains(m) && await _falarNoAparelho(t, m)) return;
     if (m == 'android') {
@@ -157,7 +172,30 @@ class VozService {
     await Sistema.falar(t);
   }
 
-  Future<void> parar() => Sistema.pararFala();
+  /// Voz usada quando a do Jarvis ainda não gravou a frase: a do Android ou
+  /// uma das vozes baixadas (Supertonic, Piper). Configurável.
+  Future<void> _falarRapida(String t) async {
+    final rapida = _cfg.getString('assistente', 'voz_rapida', 'android');
+    if (motoresLocais.contains(rapida) && await _falarNoAparelho(t, rapida)) return;
+    debugPrint('Voz: rápida (Android)');
+    await Sistema.falar(t);
+  }
+
+  int _geracao = 0; // muda ao parar: interrompe a sequência de áudios
+
+  Future<bool> _tocarEmSequencia(List<File> audios) async {
+    final minha = ++_geracao;
+    for (final a in audios) {
+      if (minha != _geracao) return true; // parado no meio
+      if (!await Sistema.tocarAudio(a.path)) return false;
+    }
+    return true;
+  }
+
+  Future<void> parar() {
+    _geracao++;
+    return Sistema.pararFala();
+  }
 
   /// Motivo da última falha da voz premium, em português (aparece no teste
   /// das Configurações). Vazio quando a última fala premium deu certo.

@@ -8,6 +8,7 @@ import 'package:googleapis/tasks/v1.dart' as tasks;
 import '../config_manager.dart';
 import '../sistema.dart';
 import '../util.dart';
+import 'compras.dart';
 import 'football_service.dart';
 import 'google_auth_service.dart';
 import 'ia_service.dart';
@@ -48,6 +49,14 @@ enum TipoComando {
 }
 
 /// Cartão que o Jarvis mostra na tela (receita, lista, passo a passo).
+/// Item que o Jarvis acabou de pôr na lista (para mudar a quantidade depois).
+class ItemCriado {
+  final String lista;
+  final String tarefa;
+  final ItemLista item;
+  const ItemCriado(this.lista, this.tarefa, this.item);
+}
+
 class CardJarvis {
   final String titulo;
   final List<(String, List<String>)> secoes;
@@ -93,6 +102,63 @@ const _telas = {
   'musica': 'spotify', 'spotify': 'spotify',
 };
 
+const _verboCompra = r'adiciona|adicionar|adicione|acrescenta|acrescentar|acrescente|'
+    r'coloca|colocar|coloque|põe|poe|bota|botar|bote|anota|anotar|anote|'
+    r'inclui|incluir|inclua|comprar|compra';
+
+// Limites de palavra que entendem acentos (o \b do Dart só conhece a-z:
+// "à", "põe" e "música" ficariam de fora).
+const _ini = r'(?<![\p{L}\p{N}])';
+const _fim = r'(?![\p{L}\p{N}])';
+RegExp _palavras(String alternativas) =>
+    RegExp('$_ini(?:$alternativas)$_fim', unicode: true);
+
+/// Itens de um pedido para a lista de compras, com acentos ("pão", não
+/// "pao"). null = a frase não é um pedido de compra. Função pura — testada.
+List<String>? itensDeCompra(String falado) {
+  var t = falado
+      .toLowerCase()
+      .replaceAll(RegExp(r'[.!?:;"]'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  // Chamado e cortesias no começo: "Jarvis, pode adicionar...", "eu quero comprar..."
+  final inicio = RegExp(
+      r'^(?:jarvis|ei|hey|ok|oi|por favor|por gentileza|pode|você pode|voce pode|vc pode|'
+              r'consegue|quero|eu quero|preciso|eu preciso|me|pra mim|para mim)' +
+          _fim +
+          r',?\s*',
+      unicode: true);
+  for (var m = inicio.firstMatch(t); m != null && m.end > 0; m = inicio.firstMatch(t)) {
+    t = t.substring(m.end);
+  }
+  final falaDeLista = _palavras(r'lista|mercado|supermercado').hasMatch(t);
+  final verbo = _palavras(_verboCompra).firstMatch(t);
+  if (verbo == null) return null;
+  // Verbo no meio da frase só vale se falou da lista ("na lista de compras adiciona leite").
+  if (verbo.start > 0 && !falaDeLista) return null;
+  var resto = t.substring(verbo.end);
+  // Sem falar da lista, "coloca a tela do clima" / "bota uma música" não são compras.
+  if (!falaDeLista &&
+      _palavras(r'tela|música|musica|volume|modo|spotify|vídeo|video|foto|fotos|playlist|'
+              r'timer|alarme|temporizador')
+          .hasMatch(resto)) {
+    return null;
+  }
+  resto = resto
+      .replaceAll(
+          _palavras(r'(?:(?:na|à|a|pra|para|pra a|para a|no|ao|da)\s+)?(?:minha\s+)?lista'
+              r'(?:\s+de\s+compras?)?(?:\s+do\s+(?:super)?mercado)?'),
+          ',')
+      .replaceAll(_palavras(r'(?:no|do|pro|para o|pra o)\s+(?:super)?mercado'), ',')
+      .replaceAll(_palavras(r'pra mim|para mim|por favor|também|tambem|' + _verboCompra), ',');
+  final itens = resto
+      .split(RegExp(r',|\s+e\s+|\s+mais\s+'))
+      .map((s) => s.trim().replaceAll(RegExp(r'^(?:e|mais)\s+'), '').trim())
+      .where((s) => s.isNotEmpty && !RegExp(r'^(?:de compras|compras|lista|aí|ai|e)$').hasMatch(s))
+      .toList();
+  return itens.isEmpty ? null : itens;
+}
+
 /// Interpreta a frase falada. Função pura — coberta por testes.
 Comando interpretar(String falado) {
   final f = normalizar(falado);
@@ -113,27 +179,10 @@ Comando interpretar(String falado) {
     if (d != null) return Comando(TipoComando.temporizador, falado, duracao: d);
   }
 
-  // Compras: "adiciona leite e pão na lista", "comprar arroz"
-  // Usa o texto original (com acentos) para os itens: "pão", não "pao".
-  final original = falado
-      .toLowerCase()
-      .replaceAll(RegExp(r'[.!?]'), '')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-  final compra = RegExp(
-          r'^(?:adiciona|adicionar|adicione|coloca|colocar|coloque|põe|poe|bota|anota|anotar|inclui|incluir|comprar|compra)\s+(.+?)(?:\s+(?:na|à|a|para a)\s+lista(?:\s+de\s+compras)?)?$')
-      .firstMatch(original);
-  if (compra != null) {
-    final itens = compra
-        .group(1)!
-        .split(RegExp(r',| e '))
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
-    if (itens.isNotEmpty) {
-      return Comando(TipoComando.adicionarCompra, falado, itens: itens);
-    }
-  }
+  // Compras: "adiciona leite e pão na lista", "comprar arroz",
+  // "Jarvis, pode adicionar leite", "adiciona na lista de compras leite".
+  final itens = itensDeCompra(falado);
+  if (itens != null) return Comando(TipoComando.adicionarCompra, falado, itens: itens);
 
   // Encerrar a conversa: frase curta de despedida ("tchau", "pode ir",
   // "valeu, Jarvis", "obrigado, era só isso").
@@ -444,15 +493,26 @@ class AssistenteService extends ChangeNotifier {
     final comando = interpretar(falado);
     _emocaoTexto = '';
     JarvisService.instance.ultimaEmocao = '';
-    if (comando.tipo == TipoComando.encerrar || comando.tipo == TipoComando.sair) {
+    // A pergunta da quantidade abriu a escuta só para a resposta (com a
+    // conversa contínua desligada): depois dela, a conversa fecha normal.
+    if (_escutaSoParaPergunta) {
+      _escutaSoParaPergunta = false;
       _emConversa = false;
     }
-    String resposta;
-    try {
-      resposta = await _executar(comando);
-    } catch (e) {
-      debugPrint('Assistente: $e');
-      resposta = 'Não consegui fazer isso agora. Verifique a internet e tente de novo.';
+    final pendente = _perguntaQuantidade;
+    _perguntaQuantidade = null;
+    String? resposta;
+    if (pendente != null) resposta = await _responderQuantidade(pendente, falado);
+    if (resposta == null) {
+      if (comando.tipo == TipoComando.encerrar || comando.tipo == TipoComando.sair) {
+        _emConversa = false;
+      }
+      try {
+        resposta = await _executar(comando);
+      } catch (e) {
+        debugPrint('Assistente: $e');
+        resposta = 'Não consegui fazer isso agora. Verifique a internet e tente de novo.';
+      }
     }
     _emocaoTexto = JarvisService.instance.ultimaEmocao; // vazio se não usou IA
     if (estado == EstadoAssistente.parado) return; // fechado no meio
@@ -478,7 +538,58 @@ class AssistenteService extends ChangeNotifier {
     });
   }
 
+  // ── Quantidade na lista de compras ──────────────────────────────────────
+  //  "Adiciona sabonete" → "Adicionei sabonete. Quer colocar uma quantidade?"
+  //  → "sim, três" → o item vira "Sabonete (3)" no Google e no card.
+  ItemCriado? _perguntaQuantidade;
+  bool _escutaSoParaPergunta = false;
+  bool _jaPerguntouQuantos = false;
+
+  void _perguntarQuantidade(ItemCriado item) {
+    _perguntaQuantidade = item;
+    if (!_emConversa) {
+      _emConversa = true; // ouve a resposta mesmo sem a conversa contínua
+      _escutaSoParaPergunta = true;
+    }
+  }
+
+  /// null = a fala não era resposta à pergunta (segue como comando normal).
+  Future<String?> _responderQuantidade(ItemCriado item, String falado) async {
+    final q = quantidadeDaResposta(falado);
+    if (q != null) {
+      _jaPerguntouQuantos = false;
+      if (q <= 1) return 'Certo, um só.';
+      final novo = item.item.comQuantidade(q);
+      final ok = await _atualizarCompra(item, novo);
+      _mostrarCardCompras([novo]);
+      return ok ? 'Pronto: ${novo.falado}.' : 'Não consegui mudar a quantidade agora.';
+    }
+    if (respostaNegativa(falado)) {
+      _jaPerguntouQuantos = false;
+      return 'Tudo bem, fica assim.';
+    }
+    if (respostaPositiva(falado) && !_jaPerguntouQuantos) {
+      _jaPerguntouQuantos = true;
+      _perguntarQuantidade(item);
+      return 'Quantos?';
+    }
+    _jaPerguntouQuantos = false;
+    return null;
+  }
+
+  void _mostrarCardCompras(List<ItemLista> itens) {
+    ultimoCard = CardJarvis('Lista de compras', [
+      ('Adicionado', [
+        for (final i in itens) (i.quantidade ?? 1) > 1 ? '${i.nome}  ×${i.quantidade}' : i.nome,
+      ]),
+    ]);
+    notifyListeners();
+  }
+
   void _encerrarConversa() {
+    _perguntaQuantidade = null;
+    _escutaSoParaPergunta = false;
+    _jaPerguntouQuantos = false;
     _emConversa = false;
     estado = EstadoAssistente.parado;
     ultimoCard = null;
@@ -510,10 +621,19 @@ class AssistenteService extends ChangeNotifier {
         cancelarTodos();
         return 'Temporizador cancelado.';
       case TipoComando.adicionarCompra:
-        final ok = await _adicionarCompras(c.itens);
-        return ok
-            ? 'Adicionei ${_juntar(c.itens)} na lista de compras.'
-            : 'Não encontrei a lista de compras. Conecte sua conta Google nas configurações.';
+        final itens = c.itens.map(lerItemFalado).where((i) => i.nome.isNotEmpty).toList();
+        final criados = await _adicionarCompras(itens);
+        if (criados == null || criados.isEmpty) {
+          return 'Não encontrei a lista de compras. Conecte sua conta Google nas configurações.';
+        }
+        _mostrarCardCompras(itens);
+        final nomes = _juntar([for (final i in itens) i.falado]);
+        // Um item só, sem quantidade: pergunta (como numa lista de verdade).
+        if (criados.length == 1 && itens.first.quantidade == null) {
+          _perguntarQuantidade(criados.first);
+          return 'Adicionei $nomes. Quer colocar uma quantidade?';
+        }
+        return 'Adicionei $nomes na lista de compras.';
       case TipoComando.hora:
         final a = DateTime.now();
         return 'Agora são ${a.hour} horas e ${a.minute} minutos.';
@@ -625,21 +745,39 @@ class AssistenteService extends ChangeNotifier {
         '${p.estadio.isNotEmpty ? ', no ${p.estadio}' : ''}.';
   }
 
-  Future<bool> _adicionarCompras(List<String> itens) async {
+  /// null = sem conta Google ou sem lista de compras.
+  Future<List<ItemCriado>?> _adicionarCompras(List<ItemLista> itens) async {
     final client = await GoogleAuthService.instance.cliente();
-    if (client == null) return false;
+    if (client == null) return null;
     try {
       final api = tasks.TasksApi(client);
       final listas = await api.tasklists.list();
       final alvo = (listas.items ?? <tasks.TaskList>[])
           .where((l) => l.id != null && ehListaDeCompras(l.title ?? ''))
           .firstOrNull;
-      if (alvo == null) return false;
-      for (final i in itens) {
-        final titulo = i[0].toUpperCase() + i.substring(1);
-        await api.tasks.insert(tasks.Task(title: titulo), alvo.id!);
-      }
+      if (alvo == null) return null;
+      return [
+        for (final i in itens)
+          ItemCriado(alvo.id!,
+              (await api.tasks.insert(tasks.Task(title: i.titulo), alvo.id!)).id ?? '', i),
+      ];
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<bool> _atualizarCompra(ItemCriado criado, ItemLista novo) async {
+    if (criado.tarefa.isEmpty) return false;
+    final client = await GoogleAuthService.instance.cliente();
+    if (client == null) return false;
+    try {
+      await tasks.TasksApi(client)
+          .tasks
+          .patch(tasks.Task(title: novo.titulo), criado.lista, criado.tarefa);
       return true;
+    } catch (e) {
+      debugPrint('Compras: $e');
+      return false;
     } finally {
       client.close();
     }

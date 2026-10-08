@@ -16,6 +16,7 @@ import 'services/football_service.dart';
 import 'services/google_auth_service.dart';
 import 'services/jarvis_service.dart';
 import 'services/telegram_service.dart';
+import 'services/voz_jarvis_service.dart';
 import 'widgets/camada_assistente.dart';
 import 'sistema.dart';
 import 'tela_bom_dia.dart';
@@ -177,6 +178,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     Sistema.inverterOlhar(config.getBool('assistente', 'inverter_olhar', false));
     TelegramService.instance.iniciar(); // a casa pelo celular
     TelegramService.instance.cameraUsada.addListener(_rearmarCamera);
+    VozJarvis.instance.iniciar(); // grava frases e o Bom Dia na voz do Jarvis
   }
 
   // ── Câmera enquanto o Jarvis está na tela: os olhos seguem a pessoa ──────
@@ -396,7 +398,9 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
     if (_noiteDispensadaAte == null || DateTime.now().isAfter(_noiteDispensadaAte!)) {
       Sistema.pararDescanso();
     }
-    final texto = await JarvisService.instance.resumoDaNoite();
+    // Preparado 1 h antes (com a voz do Jarvis já gravada) ou escrito agora.
+    final texto = await VozJarvis.instance.preparado(VozJarvis.chaveNoite(DateTime.now())) ??
+        await JarvisService.instance.resumoDaNoite();
     if (texto != null && mounted) AssistenteService.instance.anunciar(texto);
   }
 

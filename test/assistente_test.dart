@@ -98,6 +98,27 @@ void main() {
       expect(interpretar('comprar papel higiênico').itens, ['papel higiênico']);
     });
 
+    test('lista de compras: jeitos naturais de pedir', () {
+      expect(itensDeCompra('Jarvis, adiciona leite'), ['leite']);
+      expect(itensDeCompra('Pode adicionar arroz e feijão na lista'), ['arroz', 'feijão']);
+      expect(itensDeCompra('adiciona na lista de compras leite'), ['leite']);
+      expect(itensDeCompra('Adicionar à lista de compras: ovos'), ['ovos']);
+      expect(itensDeCompra('na lista de compras adiciona sabão em pó'), ['sabão em pó']);
+      expect(itensDeCompra('coloca pra mim manteiga na lista do mercado'), ['manteiga']);
+      expect(itensDeCompra('eu quero adicionar leite também'), ['leite']);
+      expect(itensDeCompra('põe banana mais maçã na lista'), ['banana', 'maçã']);
+      expect(itensDeCompra('anota café, açúcar e pão de queijo'),
+          ['café', 'açúcar', 'pão de queijo']);
+      expect(itensDeCompra('adicionar na minha lista de compras sabonete'), ['sabonete']);
+      expect(itensDeCompra('adicionar adicionar sabonete na minha lista de compras'), ['sabonete']);
+      expect(itensDeCompra('adicionar 3 sabonetes na minha lista de compras'), ['3 sabonetes']);
+      // Não são compras:
+      expect(itensDeCompra('coloca a tela do clima'), isNull);
+      expect(itensDeCompra('bota uma música'), isNull);
+      expect(itensDeCompra('o que tem na lista de compras?'), isNull);
+      expect(itensDeCompra('qual a previsão para amanhã'), isNull);
+    });
+
     test('perguntas de clima, jogo, hora e resumo', () {
       expect(interpretar('vai chover hoje?').tipo, TipoComando.clima);
       expect(interpretar('qual a temperatura amanhã').tipo, TipoComando.clima);
