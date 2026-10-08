@@ -73,9 +73,70 @@ class VozService {
   /// Fala [texto]. Com [premium], tenta a ElevenLabs e cai para o TTS do
   /// Android se não houver chave, cota ou internet. Só retorna quando a fala
   /// premium termina (o TTS do Android retorna na hora).
+  // ── Motor de voz escolhido nas Configurações ────────────────────────────
+  //  auto        → ElevenLabs se tiver chave, senão a do Android
+  //  elevenlabs  → ElevenLabs (paga com cota grátis)
+  //  supertonic / piper_faber / piper_miro → voz no aparelho (grátis, sem conta)
+  //  android     → voz do Android
+  static const motoresLocais = {'supertonic', 'piper_faber', 'piper_miro'};
+
+  String get motor => _cfg.getString('assistente', 'motor_voz', 'auto');
+
+  /// Fala com a voz do aparelho (sherpa-onnx). false = não deu (sem a voz
+  /// baixada ou falha ao gerar): quem chamou usa outra voz.
+  Future<bool> falarNoAparelho(String texto, String id) async {
+    falando.value = true;
+    try {
+      return await _falarNoAparelho(texto, id);
+    } finally {
+      falando.value = false;
+    }
+  }
+
+  Future<bool> _falarNoAparelho(String texto, String id) async {
+    if (!await Sistema.vozLocalInstalado(id)) {
+      ultimoErro = 'A voz escolhida ainda não foi baixada (Configurações > Assistente).';
+      return false;
+    }
+    final ok = await Sistema.falarLocal(
+      texto,
+      id: id,
+      voz: _cfg.getInt('assistente', 'voz_local_voz', 0),
+      velocidade: _cfg.getDouble('assistente', 'voz_local_velocidade', 1.0),
+      qualidade: _cfg.getInt('assistente', 'voz_local_qualidade', 5),
+    );
+    if (ok) {
+      debugPrint('Voz: aparelho ($id)');
+      ultimoErro = '';
+    } else {
+      ultimoErro = 'Não consegui gerar a voz no aparelho. Usando outra voz.';
+    }
+    return ok;
+  }
+
+  /// O Jarvis está falando agora (qualquer voz). A escuta do "Hey Jarvis"
+  /// pausa enquanto isso — senão ele se chama sozinho ao dizer o nome.
+  final ValueNotifier<bool> falando = ValueNotifier(false);
+
   Future<void> falar(String texto, {bool premium = true}) async {
+    falando.value = true;
+    try {
+      await _falar(texto, premium: premium);
+    } finally {
+      falando.value = false;
+    }
+  }
+
+  Future<void> _falar(String texto, {bool premium = true}) async {
     final t = texto.trim();
     if (t.isEmpty) return;
+    final m = motor;
+    // Voz no aparelho: grátis, então vale para tudo (até avisos curtos).
+    if (motoresLocais.contains(m) && await _falarNoAparelho(t, m)) return;
+    if (m == 'android') {
+      await Sistema.falar(t);
+      return;
+    }
     if (premium && premiumConfigurado) {
       try {
         final arquivo = await _audioPremium(t);

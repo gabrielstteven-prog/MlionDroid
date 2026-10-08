@@ -121,6 +121,55 @@ class Sistema {
     }
   }
 
+  // ── Voz no aparelho (sherpa-onnx: Supertonic 3, Piper pt-BR) ────────────
+
+  /// Progresso do download de uma voz: (id, 0..1).
+  static final ValueNotifier<(String, double)?> vozProgresso = ValueNotifier(null);
+
+  static Future<bool> vozLocalInstalado(String id) async {
+    try {
+      return await _canal.invokeMethod<bool>('vozLocalInstalado', {'id': id}) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Baixa e instala a voz (uma vez). true = pronta.
+  static Future<bool> vozLocalBaixar(String id) async {
+    _prepararEventos();
+    try {
+      return await _canal.invokeMethod<bool>('vozLocalBaixar', {'id': id}) ?? false;
+    } catch (e) {
+      debugPrint('Sistema.vozLocalBaixar: $e');
+      return false;
+    }
+  }
+
+  static Future<void> vozLocalApagar(String id) async {
+    try {
+      await _canal.invokeMethod('vozLocalApagar', {'id': id});
+    } catch (_) {}
+  }
+
+  /// Fala com a voz do aparelho, frase a frase; retorna quando termina.
+  /// false = não conseguiu gerar (quem chamou usa outra voz).
+  static Future<bool> falarLocal(String texto,
+      {required String id, int voz = 0, double velocidade = 1.0, int qualidade = 5}) async {
+    try {
+      return await _canal.invokeMethod<bool>('falarLocal', {
+            'texto': texto,
+            'id': id,
+            'voz': voz,
+            'velocidade': velocidade,
+            'qualidade': qualidade,
+          }).timeout(Duration(seconds: 40 + texto.length ~/ 5), onTimeout: () => true) ??
+          false;
+    } catch (e) {
+      debugPrint('Sistema.falarLocal: $e');
+      return false;
+    }
+  }
+
   /// Para de vigiar os sensores do descanso.
   static Future<void> pararDescanso() async {
     try {
@@ -176,6 +225,9 @@ class Sistema {
           acordouPorSensor.value = '${call.arguments}@${DateTime.now().millisecondsSinceEpoch}';
         case 'presenca':
           presenca.value++;
+        case 'vozProgresso':
+          final m = call.arguments as Map?;
+          vozProgresso.value = ('${m?['id']}', (m?['p'] as num?)?.toDouble() ?? 0);
         case 'nivelFala':
           nivelFala = (call.arguments as num?)?.toDouble() ?? 0;
           nivelFalaEm = DateTime.now();

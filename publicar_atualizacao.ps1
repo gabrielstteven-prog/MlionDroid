@@ -113,7 +113,8 @@ if ($jaExiste) {
 
 # --- 5. Gera o APK de release ---------------------------------------------------
 Escrever "`n[INFO] Gerando APK de release... (pode demorar alguns minutos)" "Cyan"
-flutter build apk --release
+# Só ARM (tablets reais): sem as bibliotecas de emulador x86, o APK fica bem menor.
+flutter build apk --release --target-platform android-arm,android-arm64
 if ($LASTEXITCODE -ne 0) {
     Escrever "`n[ERRO] O build falhou. Corrija os erros acima antes de publicar." "Red"
     exit 1

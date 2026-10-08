@@ -249,6 +249,7 @@ class AssistenteService extends ChangeNotifier {
     // ouve a frase ou fala, o microfone fica com ele (e ele não se chama
     // sozinho ao dizer o próprio nome).
     addListener(_sincronizarPalavra);
+    VozService.instance.falando.addListener(_sincronizarPalavra);
     Sistema.palavraOuvida.addListener(() {
       if (estado == EstadoAssistente.parado) ouvir();
     });
@@ -265,7 +266,9 @@ class AssistenteService extends ChangeNotifier {
   /// Liga/desliga a escuta da palavra conforme o estado e as Configurações.
   /// [forcar] religa mesmo se já estava ligada (chave ou sensibilidade mudou).
   Future<void> sincronizarPalavra({bool forcar = false}) async {
-    final deve = _palavraConfigurada && estado == EstadoAssistente.parado;
+    final deve = _palavraConfigurada &&
+        estado == EstadoAssistente.parado &&
+        !VozService.instance.falando.value;
     if (forcar && _palavraLigada) {
       _palavraLigada = false;
       await Sistema.desligarPalavra();

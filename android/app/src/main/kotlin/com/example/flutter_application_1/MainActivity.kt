@@ -149,6 +149,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "pararFala" -> {
                     tts?.stop()
+                    geracaoFala++ // cancela a fala no aparelho em andamento
                     concluirFala()
                     pararAudio()
                     result.success(null)
@@ -188,6 +189,34 @@ class MainActivity : FlutterActivity() {
                             FotoRapida.tirar(this) { caminho -> runOnUiThread { result.success(caminho) } }
                         }, 500)
                     }
+                }
+                // ── Voz no aparelho (sherpa-onnx) ──────────────────────────────
+                "vozLocalInstalado" -> result.success(
+                    VozLocal.instalado(this, call.argument<String>("id") ?: "")
+                )
+                "vozLocalBaixar" -> {
+                    val id = call.argument<String>("id") ?: ""
+                    Thread {
+                        val ok = VozLocal.baixar(this, id) { p ->
+                            runOnUiThread {
+                                canalSistema?.invokeMethod("vozProgresso", mapOf("id" to id, "p" to p))
+                            }
+                        }
+                        runOnUiThread { result.success(ok) }
+                    }.start()
+                }
+                "vozLocalApagar" -> {
+                    VozLocal.apagar(this, call.argument<String>("id") ?: "")
+                    result.success(null)
+                }
+                "falarLocal" -> {
+                    falarLocal(
+                        call.argument<String>("texto") ?: "",
+                        call.argument<String>("id") ?: "supertonic",
+                        call.argument<Int>("voz") ?: 0,
+                        (call.argument<Double>("velocidade") ?: 1.0).toFloat(),
+                        call.argument<Int>("qualidade") ?: 5,
+                    ) { ok -> result.success(ok) }
                 }
                 "gravarAudio" -> {
                     // "/audio" do Telegram: grava N segundos do microfone em AAC (.m4a).
@@ -231,6 +260,54 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    // ── Fala no aparelho, frase a frase ─────────────────────────────────────
+    // Uma linha gera as frases; a outra toca cada uma assim que fica pronta
+    // (com o medidor de volume: a boca do Jarvis acompanha). Cada fala nova
+    // (ou "parar") muda a geração e a anterior para sozinha.
+    @Volatile private var geracaoFala = 0
+
+    private fun falarLocal(
+        texto: String, id: String, voz: Int, velocidade: Float, qualidade: Int,
+        aoTerminar: (Boolean) -> Unit
+    ) {
+        pararAudio()
+        tts?.stop()
+        val minha = ++geracaoFala
+        val fila = java.util.concurrent.LinkedBlockingQueue<String>()
+        val frases = VozLocal.frases(texto)
+        if (frases.isEmpty()) { aoTerminar(true); return }
+        Thread {
+            for ((i, f) in frases.withIndex()) {
+                if (geracaoFala != minha) break
+                val arq = java.io.File(cacheDir, "voz_local_${minha % 2}_$i.wav")
+                if (VozLocal.gerarFrase(this, id, f, voz, velocidade, qualidade, arq)) {
+                    fila.put(arq.absolutePath)
+                } else if (i == 0) {
+                    fila.put("ERRO")
+                    return@Thread
+                }
+            }
+            fila.put("FIM")
+        }.start()
+
+        fun proxima() {
+            Thread {
+                val p = fila.take()
+                runOnUiThread {
+                    when {
+                        geracaoFala != minha -> aoTerminar(true)
+                        p == "ERRO" -> aoTerminar(false)
+                        p == "FIM" -> aoTerminar(true)
+                        else -> tocarArquivo(p) {
+                            if (geracaoFala != minha) aoTerminar(true) else proxima()
+                        }
+                    }
+                }
+            }.start()
+        }
+        proxima()
     }
 
     // ── Gravação de áudio (Telegram /audio) ─────────────────────────────────

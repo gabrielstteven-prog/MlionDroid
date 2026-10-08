@@ -46,6 +46,19 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Só processadores ARM (todos os tablets reais): o motor de voz no
+        // aparelho traz bibliotecas grandes, e x86 só existe em emulador.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+    }
+
+    // Bibliotecas nativas comprimidas no APK (o motor de voz é grande): o
+    // download da atualização fica bem menor.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 
     signingConfigs {
@@ -66,6 +79,8 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
+            // Regras para o otimizador não quebrar o motor de voz e o "Hey Jarvis".
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 }
@@ -78,4 +93,9 @@ dependencies {
     // Palavra de ativação "Hey Jarvis" (openWakeWord): os modelos ficam em
     // assets/wakeword e rodam no próprio tablet — sem conta nem chave.
     implementation("org.tensorflow:tensorflow-lite:2.17.0")
+    // Voz no aparelho (grátis, sem conta): motor sherpa-onnx (Apache 2.0) com
+    // as vozes Supertonic 3 e Piper pt-BR, baixadas pelo próprio app.
+    implementation(files("libs/sherpa-onnx-1.13.8.aar"))
+    // Descompactar os pacotes de voz (.tar.bz2).
+    implementation("org.apache.commons:commons-compress:1.28.0")
 }

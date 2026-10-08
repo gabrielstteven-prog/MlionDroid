@@ -38,6 +38,168 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
   void initState() {
     super.initState();
     _atualizarUso();
+    _verVozesInstaladas();
+  }
+
+  // ── Voz no aparelho (Supertonic 3 / Piper) ──────────────────────────────
+  static const _vozesLocais = [
+    ('supertonic', 'Supertonic 3', '10 vozes, a mais natural · ~130 MB'),
+    ('piper_faber', 'Piper "Faber"', 'Masculina, clara · ~70 MB'),
+    ('piper_miro', 'Piper "Miro"', 'Alta qualidade · ~70 MB'),
+  ];
+  final Map<String, bool> _instaladas = {};
+  String? _baixando;
+  String _statusMotor = '';
+  bool _previando = false;
+
+  Future<void> _verVozesInstaladas() async {
+    for (final (id, _, _) in _vozesLocais) {
+      _instaladas[id] = await Sistema.vozLocalInstalado(id);
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _baixarVoz(String id) async {
+    setState(() {
+      _baixando = id;
+      _statusMotor = '';
+    });
+    final ok = await Sistema.vozLocalBaixar(id);
+    if (!mounted) return;
+    setState(() {
+      _baixando = null;
+      _instaladas[id] = ok;
+      _statusMotor = ok
+          ? 'Voz instalada! Toque em Prévia para ouvir.'
+          : 'Não consegui baixar (internet?). Tente de novo.';
+    });
+  }
+
+  Future<void> _previa(String id) async {
+    await _cfg.salvar();
+    setState(() => _previando = true);
+    final nome = JarvisService.instance.nomeUsuario;
+    const texto = 'Olá! Eu sou o Jarvis. Hoje faz vinte e três graus em Hortolândia, '
+        'com chance de chuva no fim da tarde. O Palmeiras joga às nove e meia da noite. '
+        'Quer que eu prepare alguma coisa pra você?';
+    final ok = await VozService.instance
+        .falarNoAparelho(nome.isEmpty ? texto : texto.replaceFirst('Olá!', 'Olá, $nome!'), id);
+    if (!mounted) return;
+    setState(() {
+      _previando = false;
+      if (!ok) _statusMotor = VozService.instance.ultimoErro;
+    });
+  }
+
+  Widget _secaoMotorVoz() {
+    final motor = _cfg.getString('assistente', 'motor_voz', 'auto');
+    return _card([
+      Text(
+        'Vozes "no aparelho" são grátis, sem conta e sem limite: baixam uma vez e '
+        'funcionam sem internet. Teste e compare com a ElevenLabs.',
+        style: _txt(14),
+      ),
+      const SizedBox(height: 14),
+      Text('Motor de voz', style: _txt(15, peso: FontWeight.w600)),
+      const SizedBox(height: 8),
+      Wrap(spacing: 10, runSpacing: 10, children: [
+        for (final (id, rotulo) in const [
+          ('auto', 'Automático'),
+          ('supertonic', 'Supertonic 3 (aparelho)'),
+          ('piper_faber', 'Piper Faber (aparelho)'),
+          ('piper_miro', 'Piper Miro (aparelho)'),
+          ('elevenlabs', 'ElevenLabs'),
+          ('android', 'Voz do Android'),
+        ])
+          ChoiceChip(
+            label: Text(rotulo),
+            selected: motor == id,
+            onSelected: (_) => setState(() => _cfg.set('assistente', 'motor_voz', id)),
+          ),
+      ]),
+      const SizedBox(height: 18),
+      for (final (id, nome, desc) in _vozesLocais) ...[
+        Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(nome, style: _txt(15, cor: Colors.white, peso: FontWeight.w600)),
+              Text(desc, style: _txt(12.5, cor: Colors.white54)),
+            ]),
+          ),
+          if (_baixando == id)
+            SizedBox(
+              width: 160,
+              child: ValueListenableBuilder<(String, double)?>(
+                valueListenable: Sistema.vozProgresso,
+                builder: (_, p, __) => Column(children: [
+                  LinearProgressIndicator(
+                      value: p != null && p.$1 == id ? p.$2 : null, minHeight: 6),
+                  const SizedBox(height: 4),
+                  Text(
+                      p != null && p.$1 == id && p.$2 > 0.9
+                          ? 'Instalando...'
+                          : 'Baixando ${p != null && p.$1 == id ? (p.$2 * 100).round() : 0}%',
+                      style: _txt(12)),
+                ]),
+              ),
+            )
+          else if (_instaladas[id] == true) ...[
+            _botao(_previando ? 'Falando...' : 'Prévia', Icons.play_arrow_rounded,
+                _previando ? null : () => _previa(id)),
+            IconButton(
+              tooltip: 'Apagar a voz do tablet',
+              icon: const Icon(Icons.delete_outline_rounded, color: Colors.white38),
+              onPressed: () async {
+                await Sistema.vozLocalApagar(id);
+                setState(() => _instaladas[id] = false);
+              },
+            ),
+          ] else
+            _botao('Baixar', Icons.download_rounded,
+                _baixando == null ? () => _baixarVoz(id) : null),
+        ]),
+        const SizedBox(height: 12),
+      ],
+      if (_statusMotor.isNotEmpty) ...[
+        Text(_statusMotor, style: _txt(14, cor: Colors.white)),
+        const SizedBox(height: 12),
+      ],
+      Text('Voz da Supertonic', style: _txt(15, peso: FontWeight.w600)),
+      const SizedBox(height: 8),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        for (var i = 0; i < 10; i++)
+          ChoiceChip(
+            label: Text('Voz ${i + 1}'),
+            selected: _cfg.getInt('assistente', 'voz_local_voz', 0) == i,
+            onSelected: (_) => setState(() => _cfg.set('assistente', 'voz_local_voz', i)),
+          ),
+      ]),
+      const SizedBox(height: 14),
+      Text('Velocidade', style: _txt(15, peso: FontWeight.w600)),
+      const SizedBox(height: 8),
+      Wrap(spacing: 10, children: [
+        for (final (v, rotulo) in const [(0.9, 'Calma'), (1.0, 'Normal'), (1.1, 'Ágil')])
+          ChoiceChip(
+            label: Text(rotulo),
+            selected: (_cfg.getDouble('assistente', 'voz_local_velocidade', 1.0) - v).abs() < 0.01,
+            onSelected: (_) => setState(() => _cfg.set('assistente', 'voz_local_velocidade', v)),
+          ),
+      ]),
+      const SizedBox(height: 14),
+      Text('Qualidade (Supertonic)', style: _txt(15, peso: FontWeight.w600)),
+      const SizedBox(height: 4),
+      Text('Mais qualidade soa mais natural, mas demora mais para começar a falar.',
+          style: _txt(12.5, cor: Colors.white38)),
+      const SizedBox(height: 8),
+      Wrap(spacing: 10, children: [
+        for (final (v, rotulo) in const [(3, 'Rápida'), (5, 'Normal'), (8, 'Caprichada')])
+          ChoiceChip(
+            label: Text(rotulo),
+            selected: _cfg.getInt('assistente', 'voz_local_qualidade', 5) == v,
+            onSelected: (_) => setState(() => _cfg.set('assistente', 'voz_local_qualidade', v)),
+          ),
+      ]),
+    ]);
   }
 
   Future<void> _atualizarUso() async {
@@ -211,6 +373,10 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
               'licença CC BY-NC-SA 4.0.',
               style: _txt(12, cor: Colors.white30)),
         ]),
+        const SizedBox(height: 28),
+        _titulo('🔊 Voz do Jarvis'),
+        const SizedBox(height: 14),
+        _secaoMotorVoz(),
         const SizedBox(height: 28),
         _titulo('🎙️ Voz premium (ElevenLabs)'),
         const SizedBox(height: 14),
