@@ -151,6 +151,7 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _rolagem.dispose();
     _entradaCtrl.dispose();
     _saidaTimer?.cancel();
     _antiTravamento?.cancel();
@@ -214,10 +215,52 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
         ResumoService.instance
             .paraFalar(nome.isEmpty ? _saudacao : '$_saudacao, $nome', _resumo);
     if (!mounted) return;
+    await _falarTexto(texto);
+  }
+
+  // ── Fala do briefing: rolagem no ritmo da voz, ouvir de novo, parar ──────
+  final _rolagem = ScrollController();
+
+  Future<void> _falarTexto(String texto) async {
     _saidaTimer?.cancel(); // não sai da tela no meio da fala
     setState(() => _falando = true);
+    _rolarJunto(texto);
     await VozService.instance.falar(texto.replaceAll('°', ' graus'));
     if (!mounted) return;
+    setState(() => _falando = false);
+    _iniciarSaida();
+  }
+
+  /// Rola o texto até o fim no tempo estimado da fala (~14 letras por
+  /// segundo), começando do topo; quem lê acompanha onde o Jarvis está.
+  void _rolarJunto(String texto) {
+    if (!_rolagem.hasClients) return;
+    _rolagem.jumpTo(0);
+    final duracao = Duration(milliseconds: (texto.length * 1000 ~/ 14).clamp(3000, 120000));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_rolagem.hasClients || !_falando) return;
+      final fim = _rolagem.position.maxScrollExtent;
+      if (fim <= 0) return;
+      // Espera um pouco antes de rolar: as primeiras linhas já estão visíveis.
+      Future.delayed(Duration(milliseconds: duracao.inMilliseconds ~/ 6), () {
+        if (!_rolagem.hasClients || !_falando) return;
+        _rolagem.animateTo(fim,
+            duration: duracao * 0.75, curve: Curves.linear);
+      });
+    });
+  }
+
+  Future<void> _falarDeNovo() async {
+    final nome = _nomeUsuario;
+    final texto = _briefing ??
+        ResumoService.instance
+            .paraFalar(nome.isEmpty ? _saudacao : '$_saudacao, $nome', _resumo);
+    await _falarTexto(texto);
+  }
+
+  void _pararFala() {
+    VozService.instance.parar();
+    if (_rolagem.hasClients) _rolagem.jumpTo(_rolagem.offset); // para a rolagem
     setState(() => _falando = false);
     _iniciarSaida();
   }
@@ -442,8 +485,14 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
           ),
         ),
         SizedBox(height: r.sp(22)),
-        // Hora grande (lê-se do outro lado da sala) ao lado do clima.
-        Row(
+        // Hora grande (lê-se do outro lado da sala) ao lado do clima. O
+        // FittedBox encolhe a linha quando não cabe (antes ela passava por
+        // baixo da foto do dia).
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Row(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             ValueListenableBuilder<DateTime>(
@@ -477,6 +526,7 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
               ],
             ),
           ],
+        ),
         ),
       ],
     );
@@ -516,14 +566,36 @@ class _TelaBomDiaState extends State<TelaBomDia> with TickerProviderStateMixin {
                     .copyWith(letterSpacing: 5, fontWeight: FontWeight.w800)),
             SizedBox(width: r.sp(12)),
             Text(_falando ? 'falando' : 'seu dia', style: t.legenda()),
+            const Spacer(),
+            // Ouvir de novo / parar.
+            if (_briefing != null || _resumo.isNotEmpty)
+              Material(
+                color: Colors.white.withValues(alpha: _falando ? 0.22 : 0.12),
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: _falando ? _pararFala : _falarDeNovo,
+                  child: Padding(
+                    padding: EdgeInsets.all(r.sp(12)),
+                    child: Icon(
+                      _falando ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                      color: Cores.texto,
+                      size: r.icon(30),
+                    ),
+                  ),
+                ),
+              ),
           ]),
           SizedBox(height: r.sp(16)),
           Expanded(
             child: _briefing != null
-                ? Text(
-                    _briefing!,
-                    style: t.corpo().copyWith(height: 1.45),
-                    overflow: TextOverflow.fade,
+                // Rola sozinho no ritmo da fala (e com o dedo também).
+                ? SingleChildScrollView(
+                    controller: _rolagem,
+                    child: Text(
+                      _briefing!,
+                      style: t.corpo().copyWith(height: 1.45),
+                    ),
                   )
                 : _resumo.isEmpty
                     ? Text('Dia livre: nenhum compromisso, jogo ou lembrete.',
