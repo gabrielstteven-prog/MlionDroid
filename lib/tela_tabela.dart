@@ -127,6 +127,7 @@ class _TelaTabelaState extends State<TelaTabela> {
       data: jogo.data,
       nomesTime: _time.todosOsNomes,
       nomesAdversario: [adv.nome, ...?advInfo?.todosOsNomes],
+      ligaSlug: jogo.ligaSlug,
     );
     if (mounted && tv != null) setState(() => _tv = tv);
   }
@@ -496,7 +497,6 @@ class _TelaTabelaState extends State<TelaTabela> {
 
   Widget _escudoENome(R r, TimePartida tp) {
     final t = Tipo(r);
-    final nosso = tp.id == _time.espnId;
     final tamanho = r.sp(r.isCompact ? 96 : 132);
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -519,7 +519,7 @@ class _TelaTabelaState extends State<TelaTabela> {
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: t.subtitulo(cor: nosso ? corDoTime(_time) : Cores.texto)),
+            style: t.subtitulo()), // branco, para os dois times
       ],
     );
   }
@@ -673,11 +673,7 @@ class _TelaTabelaState extends State<TelaTabela> {
                       e.formacao.isEmpty
                           ? 'Escalação do ${e.time}'
                           : 'Escalação do ${e.time} (${e.formacao})',
-                      style: t.corpo(
-                          cor: e.timeId == _time.espnId
-                              ? corDoTime(_time)
-                              : Cores.texto,
-                          peso: FontWeight.w700)),
+                      style: t.corpo(peso: FontWeight.w700)),
                   SizedBox(height: r.sp(8)),
                   Expanded(
                     child: Wrap(

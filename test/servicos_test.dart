@@ -64,6 +64,17 @@ void main() {
   });
 
   group('TV — onde assistir', () {
+    test('página da competição acha o jogo quando a do time ainda não virou', () {
+      final caminho =
+          TvService.caminhoDaLiga(_fixture('futebolnatv_ligas.html'), 'bra.1');
+      expect(caminho, '/liga/brasileirao-serie-a-ne9wa6elab');
+      expect(TvService.caminhoDaLiga(_fixture('futebolnatv_ligas.html'), 'xyz'), isNull);
+      final jogos = TvService.parsePagina(_fixture('futebolnatv_liga.html'));
+      final j = TvService.encontrarJogo(jogos, ['Palmeiras'], ['Corinthians']);
+      expect(j, isNotNull);
+      expect(j!.canais, containsAll(['GLOBO', 'PREMIERE']));
+    });
+
     test('página do time traz o próximo jogo com canais', () {
       final caminho = TvService.caminhoDoTime(
           _fixture('futebolnatv_times.html'), ['Palmeiras', 'SE Palmeiras']);

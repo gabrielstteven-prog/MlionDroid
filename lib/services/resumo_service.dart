@@ -98,6 +98,7 @@ class ResumoService {
           data: jogo.data,
           nomesTime: svc.timeAtual.todosOsNomes,
           nomesAdversario: [adv],
+          ligaSlug: jogo.ligaSlug,
         );
         final canais = tv != null && tv.canais.isNotEmpty ? ', na ${tv.canais.first}' : '';
         itens.add(ItemResumo(Icons.sports_soccer_rounded,

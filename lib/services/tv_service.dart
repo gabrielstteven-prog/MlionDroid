@@ -125,18 +125,65 @@ class TvService {
     return encontrarJogo(jogos.reversed.toList(), nomesTime, nomesAdversario);
   }
 
+  /// Página da competição no site a partir do código da ESPN ("bra.1" →
+  /// "/liga/brasileirao-serie-a-..."). Ignora sub-17/sub-20/feminino.
+  /// Função pura — testada.
+  static String? caminhoDaLiga(String htmlLigas, String ligaSlug) {
+    final prefixo = switch (ligaSlug) {
+      'bra.1' => 'brasileirao-serie-a',
+      'bra.2' => 'brasileirao-serie-b',
+      'bra.3' => 'brasileirao-serie-c',
+      'bra.copa_do_brazil' => 'copa-do-brasil',
+      'conmebol.libertadores' => 'copa-libertadores',
+      'conmebol.sudamericana' => 'sul-americana',
+      'bra.camp.paulista' => 'paulista',
+      _ => null,
+    };
+    if (prefixo == null) return null;
+    for (final m in RegExp(r'href="(/liga/([a-z0-9-]+))"').allMatches(htmlLigas)) {
+      final slug = m.group(2)!;
+      if (RegExp(r'sub-?\d|feminino').hasMatch(slug)) continue;
+      if (slug.contains(prefixo)) return m.group(1);
+    }
+    return null;
+  }
+
+  /// Página da competição: lista a rodada inteira com as emissoras — serve
+  /// quando a página do time ainda mostra o jogo anterior (ela só "vira"
+  /// para o próximo jogo algumas horas depois).
+  Future<JogoNaTv?> _pelaPaginaDaLiga(
+      String ligaSlug, List<String> nomesTime, List<String> nomesAdversario) async {
+    final entrada = await buscarComCache<String>(
+      chave: 'tv_liga_$ligaSlug',
+      validade: const Duration(days: 30),
+      buscar: () async => caminhoDaLiga(await _baixar('/ligas'), ligaSlug) ?? '',
+    );
+    final caminho = entrada?.dados ?? '';
+    if (caminho.isEmpty) return null;
+    final jogos = await _jogosDaPagina(caminho, 'tv_pagina_$caminho');
+    return encontrarJogo(jogos, nomesTime, nomesAdversario);
+  }
+
   /// Procura o jogo de [nomesTime] contra [nomesAdversario] em [data]:
   /// primeiro na página do time (vale com dias de antecedência), depois na
-  /// programação de hoje/amanhã do site.
+  /// página da competição ([ligaSlug] da ESPN) e, por fim, na programação
+  /// de hoje/amanhã do site.
   Future<JogoNaTv?> buscarJogo({
     required DateTime data,
     required List<String> nomesTime,
     required List<String> nomesAdversario,
+    String ligaSlug = '',
   }) async {
     try {
       final j = await _pelaPaginaDoTime(nomesTime, nomesAdversario);
       if (j != null && j.canais.isNotEmpty) return j;
     } catch (_) {}
+    if (ligaSlug.isNotEmpty) {
+      try {
+        final j = await _pelaPaginaDaLiga(ligaSlug, nomesTime, nomesAdversario);
+        if (j != null && j.canais.isNotEmpty) return j;
+      } catch (_) {}
+    }
     final dias = soData(data).difference(soData(DateTime.now())).inDays;
     if (dias != 0 && dias != 1) return null;
     final caminho = dias == 0 ? '/jogos-hoje' : '/jogos-amanha';

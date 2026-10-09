@@ -312,9 +312,17 @@ class FootballService {
   /// Últimos resultados, do mais recente ao mais antigo.
   Future<ComIdade<List<Partida>>?> ultimosResultados({int limite = 5}) async {
     final id = timeAtual.espnId;
+    // Dia de jogo (antes, durante ou logo depois): 5 min — senão o jogo que
+    // acabou de terminar só aparecia nos "Últimos jogos" horas depois.
+    final perto = jogoDoMomento.value != null ||
+        _temJogoPerto(_partidas(
+            (await CacheManager.instance
+                        .obterEntrada<Map<String, dynamic>>('futebol_proximos_$id'))
+                    ?.dados ??
+                const {}));
     final entrada = await buscarComCache<Map<String, dynamic>>(
       chave: 'futebol_resultados_$id',
-      validade: const Duration(hours: 3),
+      validade: perto ? const Duration(minutes: 5) : const Duration(minutes: 30),
       buscar: () =>
           _getJson('$_base/site/v2/sports/soccer/all/teams/$id/schedule'),
     );
@@ -467,6 +475,10 @@ class FootballService {
     } catch (_) {}
 
     _detectarGol(momento);
+    // Jogo acabou: os "Últimos jogos" guardados ficaram velhos (sem ele).
+    if (momento != null && momento.encerrada && jogoDoMomento.value?.encerrada != true) {
+      await CacheManager.instance.invalidar('futebol_resultados_${timeAtual.espnId}');
+    }
     jogoDoMomento.value = momento;
 
     // Perto do jogo: confere a cada minuto. Longe: a cada 15 min.
