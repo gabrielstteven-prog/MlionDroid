@@ -98,7 +98,7 @@ class _MlionDroidMasterState extends State<MlionDroidMaster>
   /// troca (rede travada, tela que esqueceu de chamar aoTerminar...).
   static const Map<String, int> _tempoMaximoTela = {
     'bom_dia': 330,
-    'clima': 150,
+    'clima': 240, // três mapas (cada um conta só depois de carregar)
     'palmeiras': 330,
     'proxima_partida': 90,
     'classificacao': 240,

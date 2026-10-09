@@ -477,8 +477,8 @@ class MainActivity : FlutterActivity() {
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }
-        SomJarvis.mutar(this, 2500) // cala o bip de início do Google
-        r.startListening(i)
+        // Som do Jarvis primeiro; depois silencia o bip do Google e ouve.
+        SomJarvis.antesDeOuvir(this) { if (reconhecedor === r) r.startListening(i) }
     }
 
     private fun entregarFala(texto: String) {

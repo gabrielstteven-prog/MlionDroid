@@ -49,67 +49,99 @@ extension on ModoMapa {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  MapaClimaManager — um único WebView vivo durante todo o app, para o
-//  mapa aparecer pronto. Só recarrega quando a localização ou o modo mudam.
+//  MapaClimaManager — um WebView por mapa, vivo durante todo o app.
+//  Cada mapa carrega UMA vez; trocar de modo só mostra o que já está
+//  pronto (nada de recarregar a cada troca do rodízio). Recarrega só
+//  quando os dados envelhecem: radar a cada 10 min, previsão e
+//  temperatura a cada 1 h (o modelo do tempo muda devagar) — ou se a
+//  cidade mudar ou der erro.
 // ═══════════════════════════════════════════════════════════════════════
+class _MapaVivo {
+  final WebViewController controller = WebViewController();
+  String? url;
+  DateTime? carregadoEm;
+  Completer<void>? carregando;
+  Timer? timeout;
+  bool erro = false;
+  bool pronto = false;
+}
+
 class MapaClimaManager extends ChangeNotifier {
   MapaClimaManager._() {
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0x00000000))
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageFinished: (_) => _marcarPronto(),
-          onWebResourceError: (e) {
-            if (e.isForMainFrame != false) _falhar();
-          },
-        ),
-      );
+    for (final m in ModoMapa.values) {
+      final v = _MapaVivo();
+      v.controller
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setBackgroundColor(const Color(0x00000000))
+        ..setNavigationDelegate(
+          NavigationDelegate(
+            onPageFinished: (_) => _marcarPronto(v),
+            onWebResourceError: (e) {
+              if (e.isForMainFrame != false) _falhar(v);
+            },
+          ),
+        );
+      _mapas[m] = v;
+    }
   }
   static final MapaClimaManager instance = MapaClimaManager._();
 
   /// Desligado só em prévias renderizadas no PC (WebView não existe lá).
   static bool habilitado = true;
 
-  late final WebViewController _controller;
-  WebViewController get controller => _controller;
+  final Map<ModoMapa, _MapaVivo> _mapas = {};
 
-  String? _carregado;
-  Completer<void>? _carregando;
-  Timer? _timeout;
-  bool _comErro = false;
-  bool get comErro => _comErro;
+  /// Quanto tempo cada mapa vale antes de recarregar.
+  static Duration validade(ModoMapa m) => m == ModoMapa.radar
+      ? const Duration(minutes: 10)
+      : const Duration(hours: 1);
 
-  void _marcarPronto() {
-    _timeout?.cancel();
-    _comErro = false;
-    if (_carregando?.isCompleted == false) _carregando!.complete();
+  WebViewController controller(ModoMapa m) => _mapas[m]!.controller;
+  bool comErro(ModoMapa m) => _mapas[m]!.erro;
+  bool pronto(ModoMapa m) => _mapas[m]!.pronto;
+
+  /// Já foi carregado alguma vez (o WebView dele entra na tela).
+  bool iniciado(ModoMapa m) => _mapas[m]!.url != null;
+
+  void _marcarPronto(_MapaVivo v) {
+    v.timeout?.cancel();
+    v.erro = false;
+    v.pronto = true;
+    v.carregadoEm = DateTime.now();
+    if (v.carregando?.isCompleted == false) v.carregando!.complete();
     notifyListeners();
   }
 
-  void _falhar() {
-    _timeout?.cancel();
-    _comErro = true;
-    _carregado = null;
-    if (_carregando?.isCompleted == false) _carregando!.complete();
+  void _falhar(_MapaVivo v) {
+    v.timeout?.cancel();
+    v.erro = true;
+    v.url = null;
+    if (v.carregando?.isCompleted == false) v.carregando!.complete();
     notifyListeners();
   }
 
   Future<void> mostrar(String lat, String lon, ModoMapa modo,
       {bool forcar = false}) {
+    final v = _mapas[modo]!;
     final url = modo.url(lat, lon);
-    if (!forcar && _carregado == url && !_comErro) {
-      return _carregando?.future ?? Future.value();
+    final velho = v.carregadoEm == null ||
+        DateTime.now().difference(v.carregadoEm!) > validade(modo);
+    if (!forcar && v.url == url && !v.erro && !velho) {
+      return v.carregando?.future ?? Future.value();
     }
-    _carregado = url;
-    _comErro = false;
-    _carregando = Completer<void>();
-    _controller.loadRequest(Uri.parse(url));
-    _timeout?.cancel();
-    _timeout = Timer(const Duration(seconds: 20), () {
-      if (_carregando?.isCompleted == false) _falhar();
+    // Recarregando por idade: o mapa antigo continua na tela até o novo
+    // ficar pronto (não pisca a tela de "carregando").
+    v.pronto = v.pronto && v.url == url && !forcar;
+    v.url = url;
+    v.erro = false;
+    v.carregando = Completer<void>();
+    v.controller.loadRequest(Uri.parse(url));
+    v.timeout?.cancel();
+    v.timeout = Timer(const Duration(seconds: 25), () {
+      if (v.carregando?.isCompleted == false) _falhar(v);
     });
-    return _carregando!.future;
+    notifyListeners();
+    return v.carregando!.future;
   }
 }
 
@@ -138,7 +170,8 @@ class _TelaClimaState extends State<TelaClima> {
 
   /// Rodízio dos mapas: cada um fica [_segPorMapa] s. Um toque num botão
   /// pausa o rodízio por 1 minuto; depois ele volta sozinho.
-  static const _segPorMapa = 15;
+  /// A duração configurada da tela é dividida entre os três mapas (mínimo 15 s).
+  int get _segPorMapa => (_duracaoSeg ~/ ModoMapa.values.length).clamp(15, 60);
   Timer? _rodizio;
   DateTime _manualAte = DateTime(2000);
   bool _avisosVistos = false;
@@ -156,22 +189,39 @@ class _TelaClimaState extends State<TelaClima> {
     super.dispose();
   }
 
-  void _proximoMapa() {
-    if (!mounted || DateTime.now().isBefore(_manualAte)) return;
-    final i = ModoMapa.values.indexOf(_modo ?? ModoMapa.radar);
+  /// Mapas que já ficaram o tempo todo na tela. A tela só sai depois dos três.
+  final Set<ModoMapa> _vistos = {};
+  int _segNoMapa = 0;
+
+  /// Roda a cada segundo. O tempo de cada mapa só conta depois que ele
+  /// CARREGOU (mapa carregando não perde a vez); com erro, é pulado.
+  void _relogioDoRodizio() {
+    if (!mounted || _modo == null || DateTime.now().isBefore(_manualAte)) return;
+    final modo = _modo!;
+    final erro = MapaClimaManager.habilitado && MapaClimaManager.instance.comErro(modo);
+    if (_mapaPronto || erro || !MapaClimaManager.habilitado) _segNoMapa++;
+    if (_segNoMapa < _segPorMapa && !erro) return;
+    _segNoMapa = 0;
+    _vistos.add(modo);
+    if (_vistos.length >= ModoMapa.values.length) {
+      // Os três já passaram: fica mais um pouco e segue.
+      _rodizio?.cancel();
+      _saidaTimer?.cancel();
+      _saidaTimer = Timer(const Duration(seconds: 8), () {
+        _tempoCumprido = true;
+        _tentarSair();
+      });
+      return;
+    }
+    final i = ModoMapa.values.indexOf(modo);
     _trocarModo(ModoMapa.values[(i + 1) % ModoMapa.values.length]);
   }
 
-  /// Toque num botão do mapa: fica nele e a tela espera você.
+  /// Toque num botão do mapa: fica nele por 1 minuto; depois o rodízio volta.
   void _escolherMapa(ModoMapa m) {
     _manualAte = DateTime.now().add(const Duration(minutes: 1));
+    _segNoMapa = 0;
     _trocarModo(m);
-    _saidaTimer?.cancel();
-    _tempoCumprido = false;
-    _saidaTimer = Timer(const Duration(seconds: 70), () {
-      _tempoCumprido = true;
-      _tentarSair();
-    });
   }
 
   Future<void> _carregar() async {
@@ -197,17 +247,17 @@ class _TelaClimaState extends State<TelaClima> {
     final chuva = dados?.chuvaRestanteHoje().maxima ?? 0;
     final chovendo = (dados?.codigo ?? 0) >= 51;
     _trocarModo(chuva >= 30 || chovendo ? ModoMapa.radar : ModoMapa.previsao);
-    _rodizio = Timer.periodic(const Duration(seconds: _segPorMapa), (_) => _proximoMapa());
-    // Tempo para passar pelos três mapas (mais, se configurado).
-    final segundos = dados == null
-        ? 6
-        : (_duracaoSeg > ModoMapa.values.length * _segPorMapa + 5
-            ? _duracaoSeg
-            : ModoMapa.values.length * _segPorMapa + 5);
-    _saidaTimer = Timer(Duration(seconds: segundos), () {
-      _tempoCumprido = true;
-      _tentarSair(semAvisos: dados == null);
-    });
+    if (dados == null) {
+      // Sem dados do tempo: não segura a tela.
+      _saidaTimer = Timer(const Duration(seconds: 6), () {
+        _tempoCumprido = true;
+        _tentarSair(semAvisos: true);
+      });
+      return;
+    }
+    // A saída acontece depois que os três mapas passaram (veja
+    // _relogioDoRodizio). O app ainda tem um limite de segurança geral.
+    _rodizio = Timer.periodic(const Duration(seconds: 1), (_) => _relogioDoRodizio());
   }
 
   /// A tela só segue quando o tempo dela acabou E todos os avisos já
@@ -222,14 +272,14 @@ class _TelaClimaState extends State<TelaClima> {
       setState(() => _modo = modo);
       return;
     }
+    final mapas = MapaClimaManager.instance;
     setState(() {
       _modo = modo;
-      _mapaPronto = false;
+      // Já carregado: aparece na hora (sem tela de "carregando").
+      _mapaPronto = mapas.pronto(modo) && !forcar;
     });
-    MapaClimaManager.instance
-        .mostrar(_lat, _lon, modo, forcar: forcar)
-        .then((_) {
-      if (mounted) setState(() => _mapaPronto = true);
+    mapas.mostrar(_lat, _lon, modo, forcar: forcar).then((_) {
+      if (mounted && _modo == modo) setState(() => _mapaPronto = true);
     });
   }
 
@@ -382,13 +432,22 @@ class _TelaClimaState extends State<TelaClima> {
                     Text('[ mapa: ${_modo?.rotulo} ]', style: t.subtitulo()))),
       );
     }
-    final erro = MapaClimaManager.instance.comErro;
+    final mapas = MapaClimaManager.instance;
+    final atual = _modo ?? ModoMapa.radar;
+    final erro = mapas.comErro(atual);
     return ClipRRect(
       borderRadius: BorderRadius.circular(r.sp(28)),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          WebViewWidget(controller: MapaClimaManager.instance.controller),
+          // Os mapas já carregados ficam vivos; só o atual aparece.
+          for (final m in ModoMapa.values)
+            if (m == atual || mapas.iniciado(m))
+              Offstage(
+                offstage: m != atual,
+                child: WebViewWidget(
+                    key: ValueKey(m), controller: mapas.controller(m)),
+              ),
           if (!_mapaPronto || erro)
             ColoredBox(
               color: const Color(0xFF10284A),
