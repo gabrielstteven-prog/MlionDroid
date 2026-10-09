@@ -108,6 +108,7 @@ object SomJarvis {
             a.adjustStreamVolume(s, AudioManager.ADJUST_UNMUTE, 0)
         } catch (_: Exception) {}
         mudo = false
+        android.util.Log.i("MlionSom", "som de volta")
     }
 
     /** Antes de ouvir: toca o som do Jarvis e, quando ele acaba, silencia
@@ -115,21 +116,23 @@ object SomJarvis {
     fun antesDeOuvir(ctx: Context, depois: () -> Unit) {
         tocar(abrir)
         principal.postDelayed({
-            mutar(ctx, 3000)
+            // Mudo durante TODA a escuta (o Google toca bip ao começar e ao
+            // terminar); volta ao normal só no fim — ou sozinho em 20 s.
+            mutar(ctx, 20000)
             depois()
         }, 380)
     }
 
-    /** O Google já tocou o bip dele (mudo): o som volta ao normal. */
-    fun ouvindo() {
-        principal.postDelayed({ desmutar() }, 700)
-    }
+    /** Começou a ouvir: continua mudo até o fim (bip de saída do Google). */
+    fun ouvindo() {}
 
-    /** Terminou de ouvir. */
+    /** Terminou de ouvir: espera o bip de saída do Google passar (mudo),
+     *  devolve o som e toca o do Jarvis. */
     fun terminou() {
+        principal.removeCallbacks(voltar)
         principal.postDelayed({
             desmutar()
             tocar(fechar)
-        }, 350)
+        }, 900)
     }
 }

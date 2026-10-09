@@ -452,7 +452,7 @@ class MainActivity : FlutterActivity() {
             }
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {
-                SomJarvis.mutar(this@MainActivity) // cala o bip de fim do Google
+                // (continua mudo até o resultado: o bip de fim do Google vem depois)
             }
             override fun onError(error: Int) {
                 canalVoz?.invokeMethod("erro", error)
