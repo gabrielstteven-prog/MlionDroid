@@ -81,10 +81,12 @@ class BarraInfo extends StatelessWidget {
                   const Expanded(
                       child: Align(alignment: Alignment.centerLeft, child: _Relogio())),
                   // Na tela de Clima o tempo já está em destaque: o topo fica
-                  // livre. Em dia de jogo, o placar ao vivo aparece ao lado.
+                  // livre.
                   if (telaAtual != 'clima') const _Clima(),
-                  const _PlacarAoVivo(),
                   const Expanded(child: SizedBox()),
+                  // Em dia de jogo, o cartão do jogo fica à direita, junto das
+                  // ações (na tela da Próxima Partida ele seria repetido).
+                  if (telaAtual != 'proxima_partida') const _PlacarAoVivo(),
                   ListenableBuilder(
                     listenable: UpdateManager.instance,
                     builder: (context, _) => UpdateManager.instance.disponivel
@@ -581,10 +583,35 @@ class MlionShell extends StatelessWidget {
   }
 }
 
-/// Placar ao vivo no topo, estilo "cartão do Google": aparece sozinho perto
-/// do jogo do time (até 90 min antes, durante e 30 min depois) e some depois.
-class _PlacarAoVivo extends StatelessWidget {
+/// Cartão do jogo no topo: aparece sozinho perto do jogo do time (até 90 min
+/// antes, durante e 30 min depois). Escudo × escudo e, embaixo, discreto:
+/// "começa em 25 min", o minuto ao vivo ou "Fim".
+class _PlacarAoVivo extends StatefulWidget {
   const _PlacarAoVivo();
+
+  @override
+  State<_PlacarAoVivo> createState() => _PlacarAoVivoState();
+}
+
+class _PlacarAoVivoState extends State<_PlacarAoVivo> {
+  Timer? _relogio;
+
+  @override
+  void initState() {
+    super.initState();
+    // A contagem ("começa em 24 min") anda sozinha.
+    _relogio = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted && FootballService.instance.jogoDoMomento.value?.agendada == true) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _relogio?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -594,51 +621,69 @@ class _PlacarAoVivo extends StatelessWidget {
       valueListenable: FootballService.instance.jogoDoMomento,
       builder: (context, p, _) {
         if (p == null) return const SizedBox.shrink();
+        final tam = r.icon(36);
         Widget escudo(TimePartida time) => time.escudo.isEmpty
-            ? Icon(Icons.shield_rounded, color: Cores.textoApagado, size: r.icon(30))
+            ? Icon(Icons.shield_rounded, color: Cores.textoApagado, size: tam)
             : CachedNetworkImage(
                 imageUrl: time.escudo,
-                width: r.icon(34),
-                height: r.icon(34),
+                width: tam,
+                height: tam,
                 errorWidget: (_, __, ___) =>
-                    Icon(Icons.shield_rounded, color: Cores.textoApagado, size: r.icon(30)),
+                    Icon(Icons.shield_rounded, color: Cores.textoApagado, size: tam),
               );
-        final placar = p.agendada
-            ? horaMinuto(p.data)
-            : '${p.mandante.gols ?? 0} x ${p.visitante.gols ?? 0}';
-        final status = p.aoVivo
+        final aoVivo = p.aoVivo;
+        final cor = aoVivo ? Cores.alerta : Cores.textoSecundario;
+        final meio = p.agendada
+            ? Text('×', style: t.subtitulo(cor: Cores.textoSecundario))
+            : Text('${p.mandante.gols ?? 0} × ${p.visitante.gols ?? 0}',
+                style: t.subtitulo().copyWith(fontWeight: FontWeight.w800));
+        final status = aoVivo
             ? (p.detalhe.isNotEmpty && p.relogio.isEmpty ? p.detalhe : p.relogio)
             : p.encerrada
-                ? 'Fim'
-                : 'Hoje';
-        final cor = p.aoVivo ? Cores.alerta : Cores.textoSecundario;
+                ? 'Fim de jogo'
+                : textoContagem(p.data, DateTime.now());
         return Padding(
-          padding: EdgeInsets.only(left: r.sp(24)),
+          padding: EdgeInsets.only(right: r.sp(14)),
           child: Container(
-            padding: EdgeInsets.symmetric(horizontal: r.sp(16), vertical: r.sp(8)),
+            padding: EdgeInsets.fromLTRB(r.sp(20), r.sp(6), r.sp(20), r.sp(6)),
+            // Mesmo vidro escuro das cápsulas da barra (faixa e pontinhos).
             decoration: BoxDecoration(
-              color: Cores.superficie,
-              borderRadius: BorderRadius.circular(r.sp(30)),
-              border: Border.all(color: cor.withValues(alpha: p.aoVivo ? 0.7 : 0.3)),
+              color: Colors.black.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(r.sp(22)),
+              border: Border.all(color: aoVivo ? cor.withValues(alpha: 0.7) : Cores.contorno),
             ),
-            child: Row(
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                escudo(p.mandante),
-                SizedBox(width: r.sp(10)),
-                Text(placar, style: t.subtitulo()),
-                SizedBox(width: r.sp(10)),
-                escudo(p.visitante),
-                SizedBox(width: r.sp(12)),
-                if (p.aoVivo) ...[
-                  Container(
-                    width: r.sp(10),
-                    height: r.sp(10),
-                    decoration: BoxDecoration(color: cor, shape: BoxShape.circle),
-                  ),
-                  SizedBox(width: r.sp(6)),
-                ],
-                Text(status, style: t.apoio(cor: cor)),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    escudo(p.mandante),
+                    SizedBox(width: r.sp(12)),
+                    meio,
+                    SizedBox(width: r.sp(12)),
+                    escudo(p.visitante),
+                  ],
+                ),
+                SizedBox(height: r.sp(3)),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (aoVivo)
+                      Container(
+                        width: r.sp(8),
+                        height: r.sp(8),
+                        margin: EdgeInsets.only(right: r.sp(6)),
+                        decoration: BoxDecoration(color: cor, shape: BoxShape.circle),
+                      )
+                    else if (p.agendada)
+                      Padding(
+                        padding: EdgeInsets.only(right: r.sp(5)),
+                        child: Icon(Icons.schedule_rounded, size: r.icon(14), color: cor),
+                      ),
+                    Text(status, style: t.legenda(cor: cor)),
+                  ],
+                ),
               ],
             ),
           ),
@@ -646,6 +691,17 @@ class _PlacarAoVivo extends StatelessWidget {
       },
     );
   }
+}
+
+/// "começa em 25 min", "começa em 1h05", "começa em instantes", "às 21:30".
+/// Função pura — testada.
+String textoContagem(DateTime inicio, DateTime agora) {
+  final min = inicio.difference(agora).inSeconds / 60;
+  if (min <= 1) return 'começa em instantes';
+  final m = min.ceil();
+  if (m < 60) return 'começa em $m min';
+  if (m <= 180) return 'começa em ${m ~/ 60}h${(m % 60).toString().padLeft(2, '0')}';
+  return 'às ${horaMinuto(inicio)}';
 }
 
 /// Pontinhos de navegação do rodízio: a tela atual vira um tracinho na cor

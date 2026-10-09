@@ -367,6 +367,7 @@ class FootballService {
         team['shortDisplayName'] as String? ?? team['displayName'] as String? ?? '',
         r['formation'] as String? ?? '',
         jogadores,
+        team['color'] as String? ?? '',
       ));
     }
     return lista;
@@ -458,5 +459,6 @@ class Escalacao {
   final String time;
   final String formacao;
   final List<Jogador> titulares;
-  const Escalacao(this.timeId, this.time, this.formacao, this.titulares);
+  final String cor; // "417505" (hex, sem #), vazio se a ESPN não mandar
+  const Escalacao(this.timeId, this.time, this.formacao, this.titulares, [this.cor = '']);
 }

@@ -10,9 +10,11 @@ import 'design/tema.dart';
 import 'responsive.dart';
 import 'services/football_service.dart';
 import 'services/tv_service.dart';
+import 'barra_info.dart' show textoContagem;
 import 'tela_palmeiras.dart' show EscudoTime;
 import 'times.dart';
 import 'util.dart';
+import 'widgets/campo_tatico.dart';
 
 /// Próxima partida do time — e, no dia do jogo, o centro das atenções:
 /// contagem regressiva, escalação, placar ao vivo e onde assistir.
@@ -144,6 +146,30 @@ class _TelaTabelaState extends State<TelaTabela> {
   }
 
   Widget _buildJogo(R r, Partida jogo) {
+    // Escalação saiu: a tela vira os dois campinhos frente a frente.
+    final casa = _escalacao.where((e) => e.timeId == jogo.mandante.id).firstOrNull;
+    final fora = _escalacao.where((e) => e.timeId == jogo.visitante.id).firstOrNull;
+    if (casa != null && fora != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(flex: 5, child: _ladoEscalacao(r, jogo.mandante, casa)),
+                SizedBox(width: r.sp(16)),
+                Expanded(flex: 3, child: _centroEscalacao(r, jogo)),
+                SizedBox(width: r.sp(16)),
+                Expanded(flex: 5, child: _ladoEscalacao(r, jogo.visitante, fora)),
+              ],
+            ),
+          ),
+          SizedBox(height: r.sp(16)),
+          _faixaInformacoes(r, jogo),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -294,7 +320,82 @@ class _TelaTabelaState extends State<TelaTabela> {
     );
   }
 
-  // ── Escalação (dia de jogo) ──────────────────────────────────────────────
+  // ── Escalação em campinho (dia de jogo) ─────────────────────────────────
+  Widget _escudo(TimePartida tp, double tamanho) => SizedBox(
+        width: tamanho,
+        height: tamanho,
+        child: tp.escudo.isEmpty
+            ? Icon(Icons.shield_rounded, color: Cores.textoApagado, size: tamanho * 0.7)
+            : CachedNetworkImage(
+                imageUrl: tp.escudo,
+                fit: BoxFit.contain,
+                errorWidget: (_, __, ___) =>
+                    Icon(Icons.shield_rounded, color: Cores.textoApagado, size: tamanho * 0.7),
+              ),
+      );
+
+  Widget _ladoEscalacao(R r, TimePartida tp, Escalacao e) {
+    final t = Tipo(r);
+    final nosso = tp.id == _time.espnId;
+    final cor = corHex(e.cor, nosso ? corDoTime(_time) : Cores.textoSecundario);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Escudo, nome e esquema centralizados em cima do campinho.
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          _escudo(tp, r.sp(48)),
+          SizedBox(width: r.sp(12)),
+          Flexible(
+            child: Text(tp.nome,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: t.titulo()),
+          ),
+          if (e.formacao.isNotEmpty) ...[
+            SizedBox(width: r.sp(14)),
+            Selo(e.formacao, cor: Cores.texto),
+          ],
+        ]),
+        SizedBox(height: r.sp(12)),
+        Expanded(child: CampoTatico(escalacao: e, cor: cor)),
+      ],
+    );
+  }
+
+  Widget _centroEscalacao(R r, Partida jogo) {
+    final t = Tipo(r);
+    final grande = r.sp(r.isCompact ? 72 : 104);
+    final Widget numero;
+    final String abaixo;
+    if (jogo.aoVivo || jogo.encerrada) {
+      numero = Text('${jogo.mandante.gols ?? 0} – ${jogo.visitante.gols ?? 0}', style: t.heroi());
+      abaixo = jogo.aoVivo ? 'Ao vivo, ${jogo.relogio}' : 'Encerrado';
+    } else {
+      numero = Text(horaMinuto(jogo.data), style: t.heroi());
+      abaixo = textoContagem(jogo.data, DateTime.now());
+    }
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Os escudos já estão em cima de cada campinho: no meio, a
+          // competição em destaque e um "×" grande.
+          LogoCompeticao(slug: jogo.ligaSlug, logoId: jogo.ligaLogoId, tamanho: grande * 1.4),
+          SizedBox(height: r.sp(28)),
+          Text('×',
+              style: t.heroi(cor: Cores.textoSecundario).copyWith(height: 1)),
+          SizedBox(height: r.sp(28)),
+          numero,
+          SizedBox(height: r.sp(4)),
+          Text(abaixo,
+              style: t.subtitulo(cor: jogo.aoVivo ? Cores.alerta : _cor)),
+        ],
+      ),
+    );
+  }
+
+  // ── Escalação em lista (só se faltar a do adversário) ───────────────────
   Widget _blocoEscalacao(R r) {
     final t = Tipo(r);
     return Row(
