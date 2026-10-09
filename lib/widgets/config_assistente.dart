@@ -379,7 +379,7 @@ class _ConfigAssistenteState extends State<ConfigAssistente> {
           Wrap(spacing: 10, children: [
             for (final (id, rotulo) in const [
               ('rosto', 'Rosto com emoções'),
-              ('orbe', 'Orbe (HUD)'),
+              ('orbe', 'Orbe animado'),
             ])
               ChoiceChip(
                 label: Text(rotulo),

@@ -133,6 +133,18 @@ class Partida {
     final tipo = status['type'] as Map<String, dynamic>? ?? {};
     final venue = comp['venue'] as Map<String, dynamic>? ?? {};
     final liga = ev['league'] as Map<String, dynamic>?;
+    var mandante = _time(casa);
+    var visitante = _time(fora);
+    final estado = tipo['state'] as String? ?? 'pre';
+    if (estado != 'pre') {
+      // A ESPN às vezes manda o jogo sem placar (ou de uma cópia atrasada):
+      // sem isso o painel voltava a 0 x 0 e anunciava "gol" de novo.
+      final (gc, gf) = PlacarConfiavel.corrigir('${ev['id']}', mandante.gols, visitante.gols);
+      mandante = TimePartida(
+          mandante.id, mandante.nome, mandante.abreviacao, mandante.escudo, gc);
+      visitante = TimePartida(
+          visitante.id, visitante.nome, visitante.abreviacao, visitante.escudo, gf);
+    }
     return Partida(
       id: '${ev['id']}',
       data: data.toLocal(),
@@ -140,14 +152,44 @@ class Partida {
           liga?['name'] as String? ?? liga?['abbreviation'] as String? ?? ''),
       ligaSlug: liga?['slug'] as String? ?? '',
       ligaLogoId: '${liga?['alternateId'] ?? ''}',
-      mandante: _time(casa),
-      visitante: _time(fora),
+      mandante: mandante,
+      visitante: visitante,
       estadio: venue['fullName'] as String? ?? '',
       cidade: (venue['address'] as Map?)?['city'] as String? ?? '',
       estado: tipo['state'] as String? ?? 'pre',
       relogio: status['displayClock'] as String? ?? '',
       detalhe: tipo['shortDetail'] as String? ?? '',
     );
+  }
+}
+
+/// Último placar válido de cada jogo. Placar não volta para trás à toa:
+///  • veio vazio → mantém o último;
+///  • veio MENOR → só aceita se repetir na consulta seguinte (gol anulado
+///    pelo VAR acaba corrigido; uma cópia atrasada da ESPN, não).
+/// Testada.
+class PlacarConfiavel {
+  static final Map<String, (int, int)> _ultimo = {};
+  static final Map<String, (int, int)> _menorPendente = {};
+
+  static (int?, int?) corrigir(String jogo, int? casa, int? fora) {
+    final antes = _ultimo[jogo];
+    if (casa == null || fora == null) return antes ?? (casa, fora);
+    if (antes != null && (casa < antes.$1 || fora < antes.$2)) {
+      if (_menorPendente[jogo] != (casa, fora)) {
+        _menorPendente[jogo] = (casa, fora);
+        return antes; // espera confirmar
+      }
+    }
+    _menorPendente.remove(jogo);
+    _ultimo[jogo] = (casa, fora);
+    return (casa, fora);
+  }
+
+  @visibleForTesting
+  static void limpar() {
+    _ultimo.clear();
+    _menorPendente.clear();
   }
 }
 

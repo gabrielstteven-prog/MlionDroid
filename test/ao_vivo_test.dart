@@ -71,3 +71,4 @@ void main() {
     expect(v.estatisticas[1].fora, '18');
   });
 }
+
