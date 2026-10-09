@@ -300,7 +300,7 @@ class AssistenteService extends ChangeNotifier {
     addListener(_sincronizarPalavra);
     VozService.instance.falando.addListener(_sincronizarPalavra);
     Sistema.palavraOuvida.addListener(() {
-      if (estado == EstadoAssistente.parado) ouvir();
+      if (estado == EstadoAssistente.parado) ouvir(porPalavra: true);
     });
   }
 
@@ -434,7 +434,9 @@ class AssistenteService extends ChangeNotifier {
 
   /// Toque no microfone, "Hey Jarvis" ou a volta automática da conversa
   /// ([continuacao]).
-  Future<void> ouvir({bool continuacao = false}) async {
+  /// [porPalavra]: acordou pelo "Hey Jarvis". Se ninguém falar nada depois
+  /// (provável alarme falso: TV, narração), some em silêncio.
+  Future<void> ouvir({bool continuacao = false, bool porPalavra = false}) async {
     if (estado == EstadoAssistente.ouvindo) return;
     if (!continuacao) {
       _emConversa = _conversaContinua;
@@ -466,8 +468,9 @@ class AssistenteService extends ChangeNotifier {
     }
     if (estado != EstadoAssistente.ouvindo) return; // fechado no meio
     if (falado.trim().isEmpty) {
-      if (continuacao) {
-        // Silêncio no meio da conversa: encerra sem alarde.
+      if (continuacao || porPalavra) {
+        // Silêncio no meio da conversa (ou alarme falso da palavra): encerra
+        // sem alarde.
         _encerrarConversa();
         return;
       }

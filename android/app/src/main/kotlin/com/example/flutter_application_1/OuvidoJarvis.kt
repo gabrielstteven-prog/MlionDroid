@@ -49,6 +49,7 @@ class OuvidoJarvis(
     private val recursos = ArrayList<FloatArray>()
     private var blocos = 0
     private var ultimoDisparo = 0L
+    private var seguidos = 0 // quadros seguidos acima do limiar
 
     init {
         mel.resizeInput(0, intArrayOf(1, BLOCO + SOBRA))
@@ -173,9 +174,15 @@ class OuvidoJarvis(
         saida.rewind()
         val nota = saida.float
         if (nota > 0.2f) Log.i(TAG, "nota ${"%.2f".format(nota)}")
+        // Confirmação dupla: o "Hey Jarvis" de verdade passa do limiar em
+        // vários quadros seguidos; um som parecido (TV, narração) costuma dar
+        // um pico isolado. Só dispara com DOIS quadros seguidos (~160 ms).
+        seguidos = if (nota >= limiar) seguidos + 1 else 0
         val agora = SystemClock.elapsedRealtime()
-        if (nota >= limiar && agora - ultimoDisparo > 2000) {
+        if (seguidos >= 2 && agora - ultimoDisparo > 2000) {
             ultimoDisparo = agora
+            seguidos = 0
+            Log.i(TAG, "ouvi: Hey Jarvis (nota ${"%.2f".format(nota)})")
             aoOuvir()
         }
     }

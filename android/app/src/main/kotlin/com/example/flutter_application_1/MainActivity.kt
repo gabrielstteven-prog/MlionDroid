@@ -381,7 +381,10 @@ class MainActivity : FlutterActivity() {
             return "sem_permissao"
         }
         // Sensibilidade alta = limiar baixo (ouve mais fácil, mais alarme falso).
-        val limiar = (1.1f - sensibilidade).coerceIn(0.2f, 0.85f)
+        // Nunca abaixo de 0,5 (padrão do openWakeWord): abaixo disso a TV e
+        // a narração do jogo acordavam o Jarvis sozinho. Baixa 0,7 · Média
+        // 0,6 · Alta 0,5 — a "Alta" ouve de longe pelo ganho, não pelo limiar.
+        val limiar = (0.9f - 0.5f * sensibilidade).coerceIn(0.5f, 0.85f)
         return try {
             // Os modelos são carregados uma vez; só a escuta liga/desliga.
             if (ouvido == null || limiar != limiarOuvido) {
