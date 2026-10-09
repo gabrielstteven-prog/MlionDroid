@@ -39,6 +39,12 @@ class _TelaTabelaState extends State<TelaTabela> {
   Timer? _saidaTimer;
   Timer? _atualizarTimer;
 
+  /// Jogo rolando: lances e estatísticas. A tela alterna sozinha entre o
+  /// placar ao vivo e a escalação (campinhos) a cada 20 s.
+  JogoAoVivo? _vivo;
+  bool _vendoEscalacao = false;
+  Timer? _alternarTimer;
+
   TimeInfo get _time => FootballService.instance.timeAtual;
   Color get _cor => Destaques.partida;
   Partida? get _jogo => _proximos.firstOrNull;
@@ -60,6 +66,7 @@ class _TelaTabelaState extends State<TelaTabela> {
   void dispose() {
     _saidaTimer?.cancel();
     _atualizarTimer?.cancel();
+    _alternarTimer?.cancel();
     super.dispose();
   }
 
@@ -81,6 +88,16 @@ class _TelaTabelaState extends State<TelaTabela> {
       if (_diaDeJogo) {
         final esc = await svc.escalacao(jogo.id);
         if (mounted) setState(() => _escalacao = esc);
+      }
+      if (jogo.aoVivo || jogo.encerrada) {
+        final vivo = await svc.aoVivo(jogo);
+        if (mounted && vivo != null) setState(() => _vivo = vivo);
+        // Começa no placar; depois alterna com a escalação.
+        _alternarTimer ??= Timer.periodic(const Duration(seconds: 20), (_) {
+          if (mounted && _escalacao.length >= 2) {
+            setState(() => _vendoEscalacao = !_vendoEscalacao);
+          }
+        });
       }
     }
 
@@ -146,30 +163,55 @@ class _TelaTabelaState extends State<TelaTabela> {
   }
 
   Widget _buildJogo(R r, Partida jogo) {
-    // Escalação saiu: a tela vira os dois campinhos frente a frente.
-    final casa = _escalacao.where((e) => e.timeId == jogo.mandante.id).firstOrNull;
-    final fora = _escalacao.where((e) => e.timeId == jogo.visitante.id).firstOrNull;
-    if (casa != null && fora != null) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(flex: 5, child: _ladoEscalacao(r, jogo.mandante, casa)),
-                SizedBox(width: r.sp(16)),
-                Expanded(flex: 3, child: _centroEscalacao(r, jogo)),
-                SizedBox(width: r.sp(16)),
-                Expanded(flex: 5, child: _ladoEscalacao(r, jogo.visitante, fora)),
-              ],
-            ),
-          ),
-          SizedBox(height: r.sp(16)),
-          _faixaInformacoes(r, jogo),
-        ],
-      );
+    final casa =
+        _escalacao.where((e) => e.timeId == jogo.mandante.id).firstOrNull;
+    final fora =
+        _escalacao.where((e) => e.timeId == jogo.visitante.id).firstOrNull;
+    final temEscalacao = casa != null && fora != null;
+    // Bola rolando: placar ao vivo, alternando com a escalação.
+    final aoVivo = (jogo.aoVivo || jogo.encerrada) && _vivo != null;
+    final Widget conteudo;
+    if (aoVivo && !(_vendoEscalacao && temEscalacao)) {
+      conteudo = _telaAoVivo(r, jogo, _vivo!);
+    } else if (temEscalacao) {
+      conteudo = _telaEscalacao(r, jogo, casa, fora);
+    } else {
+      conteudo = _telaPadrao(r, jogo);
     }
+    final modo = aoVivo && !(_vendoEscalacao && temEscalacao)
+        ? 'vivo'
+        : (temEscalacao ? 'escalacao' : 'padrao');
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 600),
+      child: KeyedSubtree(key: ValueKey(modo), child: conteudo),
+    );
+  }
+
+  // Escalação saiu: os dois campinhos frente a frente.
+  Widget _telaEscalacao(R r, Partida jogo, Escalacao casa, Escalacao fora) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(flex: 5, child: _ladoEscalacao(r, jogo.mandante, casa)),
+              SizedBox(width: r.sp(16)),
+              Expanded(flex: 3, child: _centroEscalacao(r, jogo)),
+              SizedBox(width: r.sp(16)),
+              Expanded(flex: 5, child: _ladoEscalacao(r, jogo.visitante, fora)),
+            ],
+          ),
+        ),
+        SizedBox(height: r.sp(16)),
+        _faixaInformacoes(r, jogo),
+      ],
+    );
+  }
+
+  // Antes da escalação sair: confronto, informações e forma recente.
+  Widget _telaPadrao(R r, Partida jogo) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -184,6 +226,220 @@ class _TelaTabelaState extends State<TelaTabela> {
       ],
     );
   }
+
+  // ── Ao vivo: placar grande, lances e estatísticas ───────────────────────
+  Widget _telaAoVivo(R r, Partida jogo, JogoAoVivo vivo) {
+    final t = Tipo(r);
+    final status = jogo.aoVivo
+        ? (jogo.detalhe.isNotEmpty && jogo.relogio.isEmpty
+            ? jogo.detalhe
+            : jogo.relogio)
+        : 'Encerrado';
+    final escudo = r.sp(r.isCompact ? 110 : 150);
+    Widget lado(TimePartida tp) => Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _escudo(tp, escudo),
+            SizedBox(height: r.sp(12)),
+            Text(tp.nome,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: t.titulo()),
+          ],
+        );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          flex: 4,
+          child: Row(children: [
+            Expanded(child: lado(jogo.mandante)),
+            Expanded(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text(
+                      '${jogo.mandante.gols ?? 0} × ${jogo.visitante.gols ?? 0}',
+                      style: t.heroi().copyWith(
+                          fontSize: t.heroi().fontSize! * 1.25, height: 1)),
+                  SizedBox(height: r.sp(14)),
+                  Selo(status,
+                      cor: jogo.aoVivo ? Cores.alerta : Cores.textoSecundario,
+                      icone: jogo.aoVivo ? Icons.circle : null),
+                ]),
+              ),
+            ),
+            Expanded(child: lado(jogo.visitante)),
+          ]),
+        ),
+        SizedBox(height: r.sp(16)),
+        Expanded(
+          flex: 5,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: _lances(r, jogo, vivo.lances)),
+              SizedBox(width: r.sp(16)),
+              Expanded(child: _estatisticas(r, vivo.estatisticas)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _lances(R r, Partida jogo, List<Lance> lances) {
+    final t = Tipo(r);
+    Widget icone(String tipo) => switch (tipo) {
+          'gol' => Icon(Icons.sports_soccer_rounded,
+              color: Cores.texto, size: r.icon(26)),
+          _ => Container(
+              width: r.sp(16),
+              height: r.sp(22),
+              decoration: BoxDecoration(
+                color:
+                    tipo == 'vermelho' ? Cores.alerta : const Color(0xFFFFD43B),
+                borderRadius: BorderRadius.circular(r.sp(3)),
+              ),
+            ),
+        };
+    // Mais recentes em cima; lances da casa à esquerda, do visitante à direita.
+    final recentes = lances.reversed.take(6).toList();
+    return Superficie(
+      padding: EdgeInsets.all(r.sp(20)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Lances', style: t.legenda()),
+          SizedBox(height: r.sp(12)),
+          if (recentes.isEmpty)
+            Expanded(
+              child: Center(
+                  child: Text('Nenhum gol ou cartão ainda.', style: t.apoio())),
+            )
+          else
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  for (final l in recentes)
+                    Padding(
+                      padding: EdgeInsets.only(bottom: r.sp(12)),
+                      child: Builder(builder: (_) {
+                        final casa = l.timeId == jogo.mandante.id;
+                        final texto = Column(
+                          crossAxisAlignment: casa
+                              ? CrossAxisAlignment.start
+                              : CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                                l.jogador.isEmpty
+                                    ? (l.tipo == 'gol' ? 'Gol' : 'Cartão')
+                                    : l.jogador,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: t.corpo(
+                                    peso: l.tipo == 'gol'
+                                        ? FontWeight.w800
+                                        : FontWeight.w600)),
+                            if (l.detalhe.isNotEmpty)
+                              Text(l.detalhe, style: t.legenda()),
+                          ],
+                        );
+                        final minuto = SizedBox(
+                          width: r.sp(64),
+                          child: Text(l.minuto,
+                              textAlign:
+                                  casa ? TextAlign.left : TextAlign.right,
+                              style: t.corpo(cor: _cor, peso: FontWeight.w700)),
+                        );
+                        final partes = [
+                          minuto,
+                          icone(l.tipo),
+                          SizedBox(width: r.sp(12)),
+                          Flexible(child: texto)
+                        ];
+                        return Row(
+                          mainAxisAlignment: casa
+                              ? MainAxisAlignment.start
+                              : MainAxisAlignment.end,
+                          children: casa ? partes : partes.reversed.toList(),
+                        );
+                      }),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _estatisticas(R r, List<Estatistica> estat) {
+    final t = Tipo(r);
+    final corNossa = corDoTime(_time);
+    return Superficie(
+      padding: EdgeInsets.all(r.sp(20)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Estatísticas', style: t.legenda()),
+          SizedBox(height: r.sp(12)),
+          if (estat.isEmpty)
+            Expanded(
+                child: Center(
+                    child: Text('Ainda sem estatísticas.', style: t.apoio())))
+          else
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  for (final e in estat.take(6)) ...[
+                    Row(children: [
+                      Text(e.casa, style: t.corpo(peso: FontWeight.w700)),
+                      Expanded(
+                          child: Text(e.nome,
+                              textAlign: TextAlign.center, style: t.apoio())),
+                      Text(e.fora, style: t.corpo(peso: FontWeight.w700)),
+                    ]),
+                    SizedBox(height: r.sp(6)),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(r.sp(6)),
+                      child: SizedBox(
+                        height: r.sp(8),
+                        child: Row(children: [
+                          Expanded(
+                            flex: (e.vCasa * 10).round().clamp(1, 100000),
+                            child: Container(
+                                color: _jogoEhNossoEmCasa
+                                    ? corNossa
+                                    : Cores.texto),
+                          ),
+                          SizedBox(width: r.sp(3)),
+                          Expanded(
+                            flex: (e.vFora * 10).round().clamp(1, 100000),
+                            child: Container(
+                                color: _jogoEhNossoEmCasa
+                                    ? Cores.texto
+                                    : corNossa),
+                          ),
+                        ]),
+                      ),
+                    ),
+                    SizedBox(height: r.sp(12)),
+                  ],
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  bool get _jogoEhNossoEmCasa => _jogo?.mandante.id == _time.espnId;
 
   // ── Confronto: escudos e o número principal (hora ou placar) ─────────────
   Widget _confronto(R r, Partida jogo) {
@@ -325,12 +581,13 @@ class _TelaTabelaState extends State<TelaTabela> {
         width: tamanho,
         height: tamanho,
         child: tp.escudo.isEmpty
-            ? Icon(Icons.shield_rounded, color: Cores.textoApagado, size: tamanho * 0.7)
+            ? Icon(Icons.shield_rounded,
+                color: Cores.textoApagado, size: tamanho * 0.7)
             : CachedNetworkImage(
                 imageUrl: tp.escudo,
                 fit: BoxFit.contain,
-                errorWidget: (_, __, ___) =>
-                    Icon(Icons.shield_rounded, color: Cores.textoApagado, size: tamanho * 0.7),
+                errorWidget: (_, __, ___) => Icon(Icons.shield_rounded,
+                    color: Cores.textoApagado, size: tamanho * 0.7),
               ),
       );
 
@@ -368,7 +625,8 @@ class _TelaTabelaState extends State<TelaTabela> {
     final Widget numero;
     final String abaixo;
     if (jogo.aoVivo || jogo.encerrada) {
-      numero = Text('${jogo.mandante.gols ?? 0} – ${jogo.visitante.gols ?? 0}', style: t.heroi());
+      numero = Text('${jogo.mandante.gols ?? 0} – ${jogo.visitante.gols ?? 0}',
+          style: t.heroi());
       abaixo = jogo.aoVivo ? 'Ao vivo, ${jogo.relogio}' : 'Encerrado';
     } else {
       numero = Text(horaMinuto(jogo.data), style: t.heroi());
@@ -381,7 +639,10 @@ class _TelaTabelaState extends State<TelaTabela> {
         children: [
           // Os escudos já estão em cima de cada campinho: no meio, a
           // competição em destaque e um "×" grande.
-          LogoCompeticao(slug: jogo.ligaSlug, logoId: jogo.ligaLogoId, tamanho: grande * 1.4),
+          LogoCompeticao(
+              slug: jogo.ligaSlug,
+              logoId: jogo.ligaLogoId,
+              tamanho: grande * 1.4),
           SizedBox(height: r.sp(28)),
           Text('×',
               style: t.heroi(cor: Cores.textoSecundario).copyWith(height: 1)),

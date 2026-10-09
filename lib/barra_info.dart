@@ -583,35 +583,11 @@ class MlionShell extends StatelessWidget {
   }
 }
 
-/// Cartão do jogo no topo: aparece sozinho perto do jogo do time (até 90 min
-/// antes, durante e 30 min depois). Escudo × escudo e, embaixo, discreto:
-/// "começa em 25 min", o minuto ao vivo ou "Fim".
-class _PlacarAoVivo extends StatefulWidget {
+/// Placar no topo, só com a bola rolando (e logo depois do fim): uma cápsula
+/// redondinha "escudo 1 × 0 escudo". Antes do jogo o topo fica limpo — a
+/// tela da Próxima Partida já mostra tudo.
+class _PlacarAoVivo extends StatelessWidget {
   const _PlacarAoVivo();
-
-  @override
-  State<_PlacarAoVivo> createState() => _PlacarAoVivoState();
-}
-
-class _PlacarAoVivoState extends State<_PlacarAoVivo> {
-  Timer? _relogio;
-
-  @override
-  void initState() {
-    super.initState();
-    // A contagem ("começa em 24 min") anda sozinha.
-    _relogio = Timer.periodic(const Duration(seconds: 20), (_) {
-      if (mounted && FootballService.instance.jogoDoMomento.value?.agendada == true) {
-        setState(() {});
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _relogio?.cancel();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -620,8 +596,8 @@ class _PlacarAoVivoState extends State<_PlacarAoVivo> {
     return ValueListenableBuilder<Partida?>(
       valueListenable: FootballService.instance.jogoDoMomento,
       builder: (context, p, _) {
-        if (p == null) return const SizedBox.shrink();
-        final tam = r.icon(36);
+        if (p == null || p.agendada) return const SizedBox.shrink();
+        final tam = r.icon(32);
         Widget escudo(TimePartida time) => time.escudo.isEmpty
             ? Icon(Icons.shield_rounded, color: Cores.textoApagado, size: tam)
             : CachedNetworkImage(
@@ -631,59 +607,33 @@ class _PlacarAoVivoState extends State<_PlacarAoVivo> {
                 errorWidget: (_, __, ___) =>
                     Icon(Icons.shield_rounded, color: Cores.textoApagado, size: tam),
               );
-        final aoVivo = p.aoVivo;
-        final cor = aoVivo ? Cores.alerta : Cores.textoSecundario;
-        final meio = p.agendada
-            ? Text('×', style: t.subtitulo(cor: Cores.textoSecundario))
-            : Text('${p.mandante.gols ?? 0} × ${p.visitante.gols ?? 0}',
-                style: t.subtitulo().copyWith(fontWeight: FontWeight.w800));
-        final status = aoVivo
-            ? (p.detalhe.isNotEmpty && p.relogio.isEmpty ? p.detalhe : p.relogio)
-            : p.encerrada
-                ? 'Fim de jogo'
-                : textoContagem(p.data, DateTime.now());
         return Padding(
           padding: EdgeInsets.only(right: r.sp(14)),
           child: Container(
-            padding: EdgeInsets.fromLTRB(r.sp(20), r.sp(6), r.sp(20), r.sp(6)),
-            // Mesmo vidro escuro das cápsulas da barra (faixa e pontinhos).
+            padding: EdgeInsets.symmetric(horizontal: r.sp(16), vertical: r.sp(8)),
             decoration: BoxDecoration(
               color: Colors.black.withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(r.sp(22)),
-              border: Border.all(color: aoVivo ? cor.withValues(alpha: 0.7) : Cores.contorno),
+              borderRadius: BorderRadius.circular(r.sp(40)),
+              border: Border.all(
+                  color: p.aoVivo ? Cores.alerta.withValues(alpha: 0.6) : Cores.contorno),
             ),
-            child: Column(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    escudo(p.mandante),
-                    SizedBox(width: r.sp(12)),
-                    meio,
-                    SizedBox(width: r.sp(12)),
-                    escudo(p.visitante),
-                  ],
-                ),
-                SizedBox(height: r.sp(3)),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (aoVivo)
-                      Container(
-                        width: r.sp(8),
-                        height: r.sp(8),
-                        margin: EdgeInsets.only(right: r.sp(6)),
-                        decoration: BoxDecoration(color: cor, shape: BoxShape.circle),
-                      )
-                    else if (p.agendada)
-                      Padding(
-                        padding: EdgeInsets.only(right: r.sp(5)),
-                        child: Icon(Icons.schedule_rounded, size: r.icon(14), color: cor),
-                      ),
-                    Text(status, style: t.legenda(cor: cor)),
-                  ],
-                ),
+                if (p.aoVivo) ...[
+                  Container(
+                    width: r.sp(9),
+                    height: r.sp(9),
+                    decoration: const BoxDecoration(color: Cores.alerta, shape: BoxShape.circle),
+                  ),
+                  SizedBox(width: r.sp(10)),
+                ],
+                escudo(p.mandante),
+                SizedBox(width: r.sp(10)),
+                Text("${p.mandante.gols ?? 0} × ${p.visitante.gols ?? 0}",
+                    style: t.subtitulo().copyWith(fontWeight: FontWeight.w800)),
+                SizedBox(width: r.sp(10)),
+                escudo(p.visitante),
               ],
             ),
           ),

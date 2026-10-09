@@ -347,6 +347,17 @@ class FootballService {
     return parseEscalacao(entrada.dados);
   }
 
+  /// Lances e estatísticas do jogo (atualiza a cada ~30 s durante o jogo).
+  Future<JogoAoVivo?> aoVivo(Partida jogo) async {
+    final entrada = await buscarComCache<Map<String, dynamic>>(
+      chave: 'futebol_aovivo_${jogo.id}',
+      validade: const Duration(seconds: 25),
+      buscar: () => _getJson('$_base/site/v2/sports/soccer/all/summary?event=${jogo.id}'),
+    );
+    if (entrada == null) return null;
+    return parseAoVivo(entrada.dados, jogo.mandante.id);
+  }
+
   static List<Escalacao> parseEscalacao(Map<String, dynamic> json) {
     final lista = <Escalacao>[];
     for (final r in (json['rosters'] as List? ?? []).cast<Map<String, dynamic>>()) {
@@ -445,6 +456,105 @@ class FootballService {
     ultimoLance.value = '${nosso ? 'Gol do ${quem.nome}!' : 'Gol do ${quem.nome}.'} '
         '${p.mandante.nome} ${p.mandante.gols} x ${p.visitante.gols} ${p.visitante.nome}';
   }
+}
+
+/// Lance do jogo ao vivo: gol, cartão amarelo ou vermelho.
+class Lance {
+  final String tipo; // 'gol', 'amarelo', 'vermelho'
+  final String minuto; // "53'", "90'+2'"
+  final int timeId;
+  final String jogador;
+  final String detalhe; // "assist. Maurício", "contra", "pênalti"
+  const Lance(this.tipo, this.minuto, this.timeId, this.jogador, [this.detalhe = '']);
+}
+
+/// Uma estatística lado a lado: "Posse de bola 58% x 42%".
+class Estatistica {
+  final String nome;
+  final String casa;
+  final String fora;
+  final double vCasa;
+  final double vFora;
+  const Estatistica(this.nome, this.casa, this.fora, this.vCasa, this.vFora);
+}
+
+class JogoAoVivo {
+  final List<Lance> lances;
+  final List<Estatistica> estatisticas;
+  const JogoAoVivo(this.lances, this.estatisticas);
+}
+
+/// Lances e estatísticas do resumo da ESPN. [casaId] = mandante (as
+/// estatísticas ficam na ordem casa x fora). Função pura — testada.
+JogoAoVivo parseAoVivo(Map<String, dynamic> json, int casaId) {
+  final lances = <Lance>[];
+  for (final k in (json['keyEvents'] as List? ?? []).whereType<Map>()) {
+    final texto = '${(k['type'] as Map?)?['text'] ?? ''}'.toLowerCase();
+    final String tipo;
+    if (k['scoringPlay'] == true || texto.contains('goal')) {
+      tipo = 'gol';
+    } else if (texto.contains('red card')) {
+      tipo = 'vermelho';
+    } else if (texto.contains('yellow card')) {
+      tipo = 'amarelo';
+    } else {
+      continue; // substituições, início, intervalo...
+    }
+    final nomes = [
+      for (final p in (k['participants'] as List? ?? []).whereType<Map>())
+        '${(p['athlete'] as Map?)?['displayName'] ?? ''}',
+    ].where((s) => s.isNotEmpty).toList();
+    var detalhe = '';
+    if (tipo == 'gol') {
+      if (texto.contains('own goal')) {
+        detalhe = 'contra';
+      } else if (texto.contains('penalty')) {
+        detalhe = 'pênalti';
+      } else if (nomes.length > 1) {
+        detalhe = 'assist. ${nomes[1]}';
+      }
+    }
+    lances.add(Lance(
+      tipo,
+      '${(k['clock'] as Map?)?['displayValue'] ?? ''}',
+      int.tryParse('${(k['team'] as Map?)?['id']}') ?? -1,
+      nomes.isEmpty ? '' : nomes.first,
+      detalhe,
+    ));
+  }
+
+  final times = (json['boxscore'] as Map?)?['teams'] as List? ?? [];
+  Map<String, String> stats(Map t) => {
+        for (final s in (t['statistics'] as List? ?? []).whereType<Map>())
+          '${s['name']}': '${s['displayValue'] ?? ''}',
+      };
+  Map<String, String>? casa, fora;
+  for (final t in times.whereType<Map>()) {
+    final id = int.tryParse('${(t['team'] as Map?)?['id']}');
+    if (id == casaId) {
+      casa = stats(t);
+    } else {
+      fora = stats(t);
+    }
+  }
+  final estat = <Estatistica>[];
+  if (casa != null && fora != null) {
+    for (final (chave, nome, pct) in const [
+      ('possessionPct', 'Posse de bola', true),
+      ('totalShots', 'Finalizações', false),
+      ('shotsOnTarget', 'No gol', false),
+      ('wonCorners', 'Escanteios', false),
+      ('foulsCommitted', 'Faltas', false),
+      ('offsides', 'Impedimentos', false),
+    ]) {
+      final a = double.tryParse(casa[chave] ?? '');
+      final b = double.tryParse(fora[chave] ?? '');
+      if (a == null || b == null) continue;
+      String txt(double v) => pct ? '${v.round()}%' : '${v.round()}';
+      estat.add(Estatistica(nome, txt(a), txt(b), a, b));
+    }
+  }
+  return JogoAoVivo(lances, estat);
 }
 
 class Jogador {
