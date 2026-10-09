@@ -32,9 +32,10 @@ extension on ModoMapa {
   /// Radar: RainViewer mostra a chuva OBSERVADA nas últimas 2 horas,
   /// animada — é o que deixa ver a tempestade chegando.
   /// Previsão/Temperatura: Windy, com a linha do tempo dos próximos dias.
-  /// Zoom regional (8): mostra o que está vindo das cidades vizinhas.
+  /// Zoom 10: a cidade no centro e as vizinhas em volta (no 8 a cidade
+  /// sumia no meio da região).
   String url(String lat, String lon) => switch (this) {
-        ModoMapa.radar => 'https://www.rainviewer.com/map.html?loc=$lat,$lon,8'
+        ModoMapa.radar => 'https://www.rainviewer.com/map.html?loc=$lat,$lon,10'
             '&oFa=0&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=3&o=83&lm=1&layer=radar&sm=1&sn=1',
         ModoMapa.previsao => _windy(lat, lon, 'rain'),
         ModoMapa.temperatura => _windy(lat, lon, 'temp'),
@@ -42,7 +43,7 @@ extension on ModoMapa {
 
   static String _windy(String lat, String lon, String overlay) =>
       'https://embed.windy.com/embed2.html?lat=$lat&lon=$lon'
-      '&detailLat=$lat&detailLon=$lon&zoom=8&level=surface&overlay=$overlay'
+      '&detailLat=$lat&detailLon=$lon&zoom=10&level=surface&overlay=$overlay'
       '&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure='
       '&type=map&location=coordinates&detail=&metricWind=km%2Fh&metricTemp=%C2%B0C';
 }
@@ -134,6 +135,12 @@ class _TelaClimaState extends State<TelaClima> {
   bool _mapaPronto = false;
   Timer? _saidaTimer;
   bool _tempoCumprido = false;
+
+  /// Rodízio dos mapas: cada um fica [_segPorMapa] s. Um toque num botão
+  /// pausa o rodízio por 1 minuto; depois ele volta sozinho.
+  static const _segPorMapa = 15;
+  Timer? _rodizio;
+  DateTime _manualAte = DateTime(2000);
   bool _avisosVistos = false;
 
   @override
@@ -145,7 +152,26 @@ class _TelaClimaState extends State<TelaClima> {
   @override
   void dispose() {
     _saidaTimer?.cancel();
+    _rodizio?.cancel();
     super.dispose();
+  }
+
+  void _proximoMapa() {
+    if (!mounted || DateTime.now().isBefore(_manualAte)) return;
+    final i = ModoMapa.values.indexOf(_modo ?? ModoMapa.radar);
+    _trocarModo(ModoMapa.values[(i + 1) % ModoMapa.values.length]);
+  }
+
+  /// Toque num botão do mapa: fica nele e a tela espera você.
+  void _escolherMapa(ModoMapa m) {
+    _manualAte = DateTime.now().add(const Duration(minutes: 1));
+    _trocarModo(m);
+    _saidaTimer?.cancel();
+    _tempoCumprido = false;
+    _saidaTimer = Timer(const Duration(seconds: 70), () {
+      _tempoCumprido = true;
+      _tentarSair();
+    });
   }
 
   Future<void> _carregar() async {
@@ -171,7 +197,14 @@ class _TelaClimaState extends State<TelaClima> {
     final chuva = dados?.chuvaRestanteHoje().maxima ?? 0;
     final chovendo = (dados?.codigo ?? 0) >= 51;
     _trocarModo(chuva >= 30 || chovendo ? ModoMapa.radar : ModoMapa.previsao);
-    _saidaTimer = Timer(Duration(seconds: dados == null ? 6 : _duracaoSeg), () {
+    _rodizio = Timer.periodic(const Duration(seconds: _segPorMapa), (_) => _proximoMapa());
+    // Tempo para passar pelos três mapas (mais, se configurado).
+    final segundos = dados == null
+        ? 6
+        : (_duracaoSeg > ModoMapa.values.length * _segPorMapa + 5
+            ? _duracaoSeg
+            : ModoMapa.values.length * _segPorMapa + 5);
+    _saidaTimer = Timer(Duration(seconds: segundos), () {
       _tempoCumprido = true;
       _tentarSair(semAvisos: dados == null);
     });
@@ -380,7 +413,7 @@ class _TelaClimaState extends State<TelaClima> {
                   Padding(
                     padding: EdgeInsets.only(right: r.sp(8)),
                     child: GestureDetector(
-                      onTap: () => _trocarModo(m),
+                      onTap: () => _escolherMapa(m),
                       child: Container(
                         padding: EdgeInsets.symmetric(
                             horizontal: r.sp(14), vertical: r.sp(9)),

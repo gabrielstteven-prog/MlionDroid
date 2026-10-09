@@ -443,19 +443,25 @@ class MainActivity : FlutterActivity() {
         val r = SpeechRecognizer.createSpeechRecognizer(this)
         reconhecedor = r
         r.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {}
+            override fun onReadyForSpeech(params: Bundle?) {
+                SomJarvis.ouvindo() // o som do Jarvis no lugar do bip do Google
+            }
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {
                 canalVoz?.invokeMethod("volume", rmsdB.toDouble())
             }
             override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {}
+            override fun onEndOfSpeech() {
+                SomJarvis.mutar(this@MainActivity) // cala o bip de fim do Google
+            }
             override fun onError(error: Int) {
                 canalVoz?.invokeMethod("erro", error)
+                SomJarvis.terminou()
                 entregarFala("")
             }
             override fun onResults(results: Bundle?) {
                 val t = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull() ?: ""
+                SomJarvis.terminou()
                 entregarFala(t)
             }
             override fun onPartialResults(partial: Bundle?) {
@@ -471,6 +477,7 @@ class MainActivity : FlutterActivity() {
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }
+        SomJarvis.mutar(this, 2500) // cala o bip de início do Google
         r.startListening(i)
     }
 
@@ -762,6 +769,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         VozQwen.parar()
+        SomJarvis.desmutar() // nunca deixa o som do sistema mudo
         ouvido?.liberar()
         ouvido = null
         tts?.shutdown()
